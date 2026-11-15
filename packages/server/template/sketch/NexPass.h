@@ -10,6 +10,8 @@
 // - When the host starts a TFT upload (`whmi-wri size,baud,0`), NexPass switches to raw passthrough at
 //   the upload baud and stays there; the host restarts the board when the upload is done.
 // - Send instructions with NexPass.send("t0.txt=\"hi\"") (adds the FF FF FF terminator).
+//   For 3 s after each instruction from the host, send() drops the sketch's instructions, so they
+//   can't get between the host's handshake and its next instruction (a TFT upload fails otherwise).
 // - Keep Serial.print debugging out of normal operation: it shares the USB line with the display traffic.
 #pragma once
 #include <Arduino.h>
@@ -45,7 +47,10 @@ class NexPassClass {
     return b;
   }
 
+  // Sketch output is held back while the host is talking to the display (see hostByte), so it
+  // can't land between the host's handshake and its next instruction, e.g. a TFT upload.
   void send(const char *instruction) {
+    if (hostBusy()) return;
     disp_->print(instruction);
     disp_->write(0xff);
     disp_->write(0xff);
@@ -60,6 +65,11 @@ class NexPassClass {
   uint8_t head_ = 0, tail_ = 0;
   char line_[96];
   uint8_t len_ = 0, ffs_ = 0;
+  unsigned long hostAt_ = 0;
+  bool hostSeen_ = false;
+
+  static const unsigned long HOST_QUIET_MS = 3000;
+  bool hostBusy() const { return hostSeen_ && millis() - hostAt_ < HOST_QUIET_MS; }
 
   void hostByte(uint8_t b) {
     if (len_ < sizeof(line_)) line_[len_] = (char)b;
@@ -67,6 +77,8 @@ class NexPassClass {
     ffs_ = (b == 0xff) ? ffs_ + 1 : 0;
     if (ffs_ < 3) return;
     // one complete instruction (or a bare FF FF FF)
+    hostSeen_ = true;
+    hostAt_ = millis();
     uint8_t n = len_ <= sizeof(line_) ? len_ : sizeof(line_);
     disp_->write((const uint8_t *)line_, n);
     uint8_t textLen = len_ >= 3 ? len_ - 3 : 0;
@@ -89,10 +101,12 @@ class NexPassClass {
     return atol(p + 1);
   }
 
+  // Switch immediately: after `whmi-wri` the display answers 0x05 at the new baud within a few ms,
+  // so any pause here can lose that acknowledgement.
   void switchBaud(long baud) {
-    if (baud < 2400) return;
+    if (baud < 2400 || baud > 921600) return;
     disp_->flush();
-    delay(20);
+    disp_->end();
     disp_->begin(baud);
   }
 
