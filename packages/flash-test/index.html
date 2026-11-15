@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Flash test</title>
+    <style>
+      :root { --bg: #f6f7f9; --fg: #1d2330; --muted: #5b6475; --card: #fff; --line: #d9dde5; --accent: #2b62d9; --ok: #1d7a46; --err: #b3261e; }
+      @media (prefers-color-scheme: dark) {
+        :root { --bg: #14171c; --fg: #e6e9ef; --muted: #9aa3b2; --card: #1d2128; --line: #323844; --accent: #6d9bff; --ok: #4cc38a; --err: #ff8a80; }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.45 system-ui, sans-serif; }
+      main { max-width: 860px; margin: 0 auto; padding: 24px 16px 48px; }
+      h1 { font-size: 22px; margin: 0 0 4px; }
+      p.sub { color: var(--muted); margin: 0 0 20px; }
+      section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 14px; }
+      h2 { font-size: 15px; margin: 0 0 10px; }
+      .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0; }
+      button { font: inherit; padding: 7px 14px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer; }
+      button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+      button:disabled { opacity: 0.45; cursor: default; }
+      input[type="text"] { font: inherit; padding: 7px 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); flex: 1; min-width: 180px; }
+      #status { font-weight: 600; }
+      progress { width: 100%; height: 10px; }
+      #log { font: 12.5px/1.5 ui-monospace, monospace; white-space: pre-wrap; max-height: 320px; overflow: auto; background: var(--bg); border-radius: 7px; padding: 10px; margin: 0; }
+      .ok { color: var(--ok); } .err { color: var(--err); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Flash test</h1>
+      <p class="sub">Tests Web Serial flashing of the Nano Every and Nextion TFT upload on real hardware.</p>
+
+      <section>
+        <h2>1. Port</h2>
+        <div class="row">
+          <button id="pick" class="primary">Choose serial port…</button>
+          <span id="status">No port</span>
+        </div>
+      </section>
+
+      <section>
+        <h2>2. Arduino sketch</h2>
+        <div class="row">
+          <button data-hex="HelloFlash.hex">Flash HelloFlash (test sketch)</button>
+          <button data-hex="NexBridge.hex">Flash NexBridge (passthrough)</button>
+          <button id="readSerial">Read USB serial 3 s</button>
+        </div>
+        <div class="row"><label>Or a file: <input type="file" id="hexFile" accept=".hex" /></label></div>
+      </section>
+
+      <section>
+        <h2>3. Nextion display (needs NexBridge on the Arduino)</h2>
+        <div class="row">
+          <button id="probe">Connect to display</button>
+          <button id="uploadDemo">Upload demo.tft</button>
+          <label>Or a file: <input type="file" id="tftFile" accept=".tft" /></label>
+        </div>
+        <div class="row">
+          <input type="text" id="cmd" value="get tTitle.txt" />
+          <button id="send">Send</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>Progress</h2>
+        <progress id="bar" value="0" max="1"></progress>
+        <pre id="log"></pre>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,438 @@
+[
+{
+"dire": "0"
+},
+{
+"com": "addpage",
+"pagename": "dash"
+},
+{
+"com": "setatt",
+"attname": "bco",
+"attval": "6371"
+},
+{
+"com": "addobj",
+"objtype": "116",
+"objname": "tTitle"
+},
+{
+"com": "setatt",
+"attname": "x",
+"attval": "0"
+},
+{
+"com": "setatt",
+"attname": "y",
+"attval": "6"
+},
+{
+"com": "setatt",
+"attname": "w",
+"attval": "480"
+},
+{
+"com": "setatt",
+"attname": "h",
+"attval": "56"
+},
+{
+"com": "setatt",
+"attname": "font",
+"attval": "1"
+},
+{
+"com": "setatt",
+"attname": "txt_maxl",
+"attval": "20"
+},
+{
+"com": "setatt",
+"attname": "txt",
+"attval": "Dashboard"
+},
+{
+"com": "setatt",
+"attname": "pco",
+"attval": "65535"
+},
+{
+"com": "setatt",
+"attname": "bco",
+"attval": "6371"
+},
+{
+"com": "setatt",
+"attname": "sta",
+"attval": "1"
+},
+{
+"com": "addobj",
+"objtype": "54",
+"objname": "nVal"
+},
+{
+"com": "setatt",
+"attname": "x",
+"attval": "40"
+},
+{
+"com": "setatt",
+"attname": "y",
+"attval": "80"
+},
+{
+"com": "setatt",
+"attname": "w",
+"attval": "160"
+},
+{
+"com": "setatt",
+"attname": "h",
+"attval": "56"
+},
+{
+"com": "setatt",
+"attname": "font",
+"attval": "1"
+},
+{
+"com": "setatt",
+"attname": "val",
+"attval": "50"
+},
+{
+"com": "setatt",
+"attname": "pco",
+"attval": "65504"
+},
+{
+"com": "setatt",
+"attname": "bco",
+"attval": "6371"
+},
+{
+"com": "addobj",
+"objtype": "1",
+"objname": "hSet"
+},
+{
+"com": "setatt",
+"attname": "x",
+"attval": "40"
+},
+{
+"com": "setatt",
+"attname": "y",
+"attval": "150"
+},
+{
+"com": "setatt",
+"attname": "w",
+"attval": "400"
+},
+{
+"com": "setatt",
+"attname": "h",
+"attval": "40"
+},
+{
+"com": "setatt",
+"attname": "minval",
+"attval": "0"
+},
+{
+"com": "setatt",
+"attname": "maxval",
+"attval": "100"
+},
+{
+"com": "setatt",
+"attname": "val",
+"attval": "50"
+},
+{
+"com": "setevent",
+"eventname": "slide",
+"eventcode": "nVal.val=hSet.val\r\njBar.val=hSet.val"
+},
+{
+"com": "setevent",
+"eventname": "up",
+"eventcode": "nVal.val=hSet.val\r\njBar.val=hSet.val"
+},
+{
+"com": "addobj",
+"objtype": "106",
+"objname": "jBar"
+},
+{
+"com": "setatt",
+"attname": "x",
+"attval": "40"
+},
+{
+"com": "setatt",
+"attname": "y",
+"attval": "200"
+},
+{
+"com": "setatt",
+"attname": "w",
+"attval": "400"
+},
+{
+"com": "setatt",
+"attname": "h",
+"attval": "24"
+},
+{
+"com": "setatt",
+"attname": "val",
+"attval": "50"
+},
+{
+"com": "addobj",
+"objtype": "116",
+"objname": "tClock"
+},
+{
+"com": "setatt",
+"attname": "x",
+"attval": "240"
+},
+{
+"com": "setatt",
+"attname": "y",
+"attval": "80"
+},
+{
+"com": "setatt",
+"attname": "w",
+"attval": "200"
+},
+{
+"com": "setatt",
+"attname": "h",
+"attval": "56"
+},
+{
+"com": "setatt",
+"attname": "font",
+"attval": "0"
+},
+{
+"com": "setatt",
+"attname": "txt_maxl",
+"attval": "12"
+},
+{
+"com": "setatt",
+"attname": "txt",
+"attval": "0 s"
+},
+{
+"com": "setatt",
+"attname": "pco",
+"attval": "65535"
+},
+{
+"com": "setatt",
+"attname": "bco",
+"attval": "6371"
+},
+{
+"com": "addobj",
+"objtype": "52",
+"objname": "vSecs"
+},
+{
+"com": "setatt",
+"attname": "val",
+"attval": "0"
+},
+{
+"com": "addobj",
+"objtype": "51",
+"objname": "tmTick"
+},
+{
+"com": "setatt",
+"attname": "tim",
+"attval": "1000"
+},
+{
+"com": "setatt",
+"attname": "en",
+"attval": "1"
+},
+{
+"com": "setevent",
+"eventname": "timer",
+"eventcode": "vSecs.val++\r\ncovx vSecs.val,tClock.txt,0,0\r\ntClock.txt+=\" s\""
+},
+{
+"com": "addobj",
+"objtype": "98",
+"objname": "bNext"
+},
+{
+"com": "setatt",
+"attname": "x",
+"attval": "360"
+},
+{
+"com": "setatt",
+"attname": "y",
+"attval": "230"
+},
+{
+"com": "setatt",
+"attname": "w",
+"attval": "110"
+},
+{
+"com": "setatt",
+"attname": "h",
+"attval": "36"
+},
+{
+"com": "setatt",
+"attname": "font",
+"attval": "0"
+},
+{
+"com": "setatt",
+"attname": "txt_maxl",
+"attval": "10"
+},
+{
+"com": "setatt",
+"attname": "txt",
+"attval": "Info >"
+},
+{
+"com": "setevent",
+"eventname": "up",
+"eventcode": "page info"
+},
+{
+"com": "addpage",
+"pagename": "info"
+},
+{
+"com": "addobj",
+"objtype": "116",
+"objname": "tInfo"
+},
+{
+"com": "setatt",
+"attname": "x",
+"attval": "20"
+},
+{
+"com": "setatt",
+"attname": "y",
+"attval": "20"
+},
+{
+"com": "setatt",
+"attname": "w",
+"attval": "440"
+},
+{
+"com": "setatt",
+"attname": "h",
+"attval": "150"
+},
+{
+"com": "setatt",
+"attname": "font",
+"attval": "0"
+},
+{
+"com": "setatt",
+"attname": "txt_maxl",
+"attval": "120"
+},
+{
+"com": "setatt",
+"attname": "isbr",
+"attval": "1"
+},
+{
+"com": "setatt",
+"attname": "xcen",
+"attval": "0"
+},
+{
+"com": "setatt",
+"attname": "ycen",
+"attval": "0"
+},
+{
+"com": "setatt",
+"attname": "txt",
+"attval": "Built by an LLM from JSON, compiled by Nextion Editor, uploaded over a Nano Every."
+},
+{
+"com": "addobj",
+"objtype": "98",
+"objname": "bBack"
+},
+{
+"com": "setatt",
+"attname": "x",
+"attval": "10"
+},
+{
+"com": "setatt",
+"attname": "y",
+"attval": "230"
+},
+{
+"com": "setatt",
+"attname": "w",
+"attval": "110"
+},
+{
+"com": "setatt",
+"attname": "h",
+"attval": "36"
+},
+{
+"com": "setatt",
+"attname": "font",
+"attval": "0"
+},
+{
+"com": "setatt",
+"attname": "txt_maxl",
+"attval": "10"
+},
+{
+"com": "setatt",
+"attname": "txt",
+"attval": "< Back"
+},
+{
+"com": "setevent",
+"eventname": "up",
+"eventcode": "page dash"
+},
+{
+"com": "setatt",
+"attname": "0",
+"attval": "0"
+},
+{
+"com": "setevent",
+"eventname": "load",
+"eventcode": "tInfo.pco=65535\r\ntInfo.bco=0"
+},
+{
+"com": "setatt",
+"attname": "bco",
+"attval": "0"
+}
+]
