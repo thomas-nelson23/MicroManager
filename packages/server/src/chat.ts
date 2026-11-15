@@ -107,6 +107,23 @@ function benchServer(projectId: string, hub: ProjectHub) {
         },
       ),
       tool(
+        "install_library",
+        "Install an Arduino library with arduino-cli (from the Arduino library index), e.g. 'DHT sensor library' or 'Adafruit NeoPixel'. Use the exact library name from the index; dependencies are installed too.",
+        { name: z.string().min(1).max(100), version: z.string().max(20).optional() },
+        async ({ name, version }) => {
+          const spec = version ? `${name}@${version}` : name;
+          const out = await new Promise<{ code: number; out: string }>((resolve) => {
+            const p = spawn(config.arduinoCli, ["lib", "install", spec]);
+            let o = "";
+            p.stdout.on("data", (d) => (o += d));
+            p.stderr.on("data", (d) => (o += d));
+            p.on("error", (e) => resolve({ code: 1, out: String(e) }));
+            p.on("close", (code) => resolve({ code: code ?? 1, out: o }));
+          });
+          return text(out.out.trim().slice(-2000) || "installed", out.code !== 0);
+        },
+      ),
+      tool(
         "display",
         "Send Nextion instructions to the live display through the person's browser and the running sketch, and get the decoded replies (strings, numbers, return codes, touch events). Examples: 'get t0.txt', 'get dp', 'click b0,1', 'page 1'. Changes made this way are temporary.",
         {
@@ -147,6 +164,8 @@ function toolLabel(name: string, input: Record<string, unknown>, cwd: string): {
       return { label: "BUILD", detail: `${input.target} · ${input.label ?? ""}` };
     case "mcp__bench__flash":
       return { label: "FLASH", detail: `${input.parts ?? "both"}${input.build ? ` · #${input.build}` : ""}` };
+    case "mcp__bench__install_library":
+      return { label: "LIBRARY", detail: String(input.name ?? "") };
     case "mcp__bench__display":
       return { label: "DISPLAY", detail: (input.commands as string[] | undefined)?.join(" · ") };
     case "TodoWrite":
@@ -182,7 +201,7 @@ export async function sendMessage(projectId: string, userText: string): Promise<
   await hub.emit({ kind: "user", id: randomUUID(), text: userText, at: new Date().toISOString() });
   try {
     const meta = await readMeta(projectId);
-    const allowed = ["Read", "Write", "Edit", "MultiEdit", "Glob", "Grep", "TodoWrite", "mcp__bench__check_screen", "mcp__bench__build", "mcp__bench__flash", "mcp__bench__display"];
+    const allowed = ["Read", "Write", "Edit", "MultiEdit", "Glob", "Grep", "TodoWrite", "mcp__bench__check_screen", "mcp__bench__build", "mcp__bench__flash", "mcp__bench__display", "mcp__bench__install_library"];
     if (config.allowBash) allowed.push("Bash");
     const q = query({
       prompt: userText,
@@ -200,7 +219,7 @@ export async function sendMessage(projectId: string, userText: string): Promise<
         systemPrompt: {
           type: "preset",
           preset: "claude_code",
-          append: `${GUIDE}\n\n${config.allowBash ? "" : "You have no shell in this app: use Read, Write, Edit, Glob, Grep and the bench tools (check_screen, build, flash, display).\n"}The full component and attribute reference is ${path.join(GUIDE_DIR, "components.md")} (read the parts you need).\nThis project: "${meta.title}" · board ${meta.board.name} (${meta.board.fqbn}) · display ${meta.display.series} ${meta.display.model}, ${meta.display.width}×${meta.display.height}.`,
+          append: `${GUIDE}\n\n${config.allowBash ? "" : "You have no shell in this app: use Read, Write, Edit, Glob, Grep and the bench tools (check_screen, build, flash, display, install_library).\n"}The full component and attribute reference is ${path.join(GUIDE_DIR, "components.md")} (read the parts you need).\nThis project: "${meta.title}" · board ${meta.board.name} (${meta.board.fqbn}) · display ${meta.display.series} ${meta.display.model}, ${meta.display.width}×${meta.display.height}.`,
         },
       },
     });

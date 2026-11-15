@@ -35,8 +35,8 @@ builds/                 numbered build outputs (read-only; the build tool writes
 - No Serial.print debugging in normal operation (it shares the USB line with display traffic).
 - Simple two-way pattern: a button's `down` event does `prints "fan=1",0` and the sketch reads text up to
   a terminator, or the sketch reads Nextion touch events (0x65 page component event FF FF FF).
-- Third-party libraries: only ones arduino-cli already has installed; if the build says a header is
-  missing, tell the person which library is needed.
+- Third-party libraries: install what the sketch needs with `install_library` (exact name from the
+  Arduino library index, e.g. "DHT sensor library"), then build. Prefer well-known libraries.
 
 ## Workflow
 
