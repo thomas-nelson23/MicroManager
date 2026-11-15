@@ -1,0 +1,26 @@
+{
+  "name": "@nextion-arduino/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Web UI: projects, chat with Claude, screen preview, flashing over Web Serial.",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5174 --strictPort",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@nextion-arduino/flasher": "0.1.0",
+    "@nextion-arduino/server": "0.1.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/w3c-web-serial": "^1.0.9",
+    "@vitejs/plugin-react": "^6.3.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8"
+  }
+}
