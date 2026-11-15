@@ -1,0 +1,5 @@
+int sys0=0,sys1=0,sys2=0
+baud=9600
+dim=100
+recmod=0
+page 0
