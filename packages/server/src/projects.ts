@@ -1,6 +1,7 @@
 /** Projects as plain folders: project.json, sketch/, nextion/, hardware.md, builds/<n>/. */
 import fs from "node:fs/promises";
 import path from "node:path";
+import { type Board, boardById, boardByFqbn } from "./boards.ts";
 import { config, projectsDir } from "./config.ts";
 
 export interface ProjectMeta {
@@ -83,25 +84,49 @@ export async function listProjects(): Promise<ProjectMeta[]> {
   return out.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
-export async function createProject(title: string, description = ""): Promise<ProjectMeta> {
+const boardFile = (b: Board, file: string) => path.join(config.serverRoot, "boards", b.id, file);
+
+export async function createProject(title: string, description = "", boardId?: string): Promise<ProjectMeta> {
+  const board = (boardId && boardById(boardId)) || boardByFqbn(config.defaults.board.fqbn);
   await fs.mkdir(projectsDir(), { recursive: true });
   let id = slugify(title);
   for (let i = 2; await exists(path.join(projectsDir(), id)); i++) id = `${slugify(title).slice(0, 36)}-${i}`;
   const dir = projectDir(id);
   await fs.cp(path.join(config.serverRoot, "template"), dir, { recursive: true });
   await fs.mkdir(path.join(dir, "builds"), { recursive: true });
+  if (board) await fs.copyFile(boardFile(board, "hardware.md"), path.join(dir, "hardware.md"));
+  else await fs.writeFile(path.join(dir, "hardware.md"), "# Hardware\n\nDisplay: Nextion on Serial1 at 9600 baud.\n");
   const now = new Date().toISOString();
   const meta: ProjectMeta = {
     id,
     title: title.trim() || "New project",
     description,
-    board: { ...config.defaults.board },
+    board: board ? { fqbn: board.fqbn, name: board.name } : { ...config.defaults.board },
     display: { ...config.defaults.display },
     createdAt: now,
     updatedAt: now,
   };
   await writeMeta(meta);
   return meta;
+}
+
+/**
+ * Switch a project to another board. NexPass.h is refreshed from the template (it is a library the
+ * sketch must not edit, and newer copies know more boards); hardware.md is replaced only while it is
+ * still the old board's untouched template.
+ */
+export async function setBoard(meta: ProjectMeta, board: Board): Promise<void> {
+  const dir = projectDir(meta.id);
+  const old = boardByFqbn(meta.board.fqbn);
+  const hw = path.join(dir, "hardware.md");
+  const [cur, oldTpl] = await Promise.all([
+    fs.readFile(hw, "utf8").catch(() => ""),
+    old ? fs.readFile(boardFile(old, "hardware.md"), "utf8").catch(() => null) : null,
+  ]);
+  if (!cur.trim() || cur === oldTpl) await fs.copyFile(boardFile(board, "hardware.md"), hw);
+  await fs.copyFile(path.join(config.serverRoot, "template", "sketch", "NexPass.h"), path.join(dir, "sketch", "NexPass.h"));
+  meta.board = { fqbn: board.fqbn, name: board.name };
+  await writeMeta(meta);
 }
 
 export async function listBuilds(id: string): Promise<BuildRecord[]> {

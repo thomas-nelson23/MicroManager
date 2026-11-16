@@ -10,6 +10,13 @@ export interface ProjectMeta {
   updatedAt: string;
 }
 
+export interface Board {
+  id: string;
+  fqbn: string;
+  name: string;
+  flasher: "nano-every" | "teensy";
+}
+
 export interface BuildPart {
   ok: boolean;
   file?: string;
@@ -48,8 +55,13 @@ async function json<T>(r: Response): Promise<T> {
 export const api = {
   projects: () => fetch("/api/projects").then((r) => json<ProjectMeta[]>(r)),
   project: (id: string) => fetch(`/api/projects/${id}`).then((r) => json<ProjectDetail>(r)),
-  create: (title: string) =>
-    fetch("/api/projects", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title }) }).then((r) =>
+  boards: () => fetch("/api/boards").then((r) => json<Board[]>(r)),
+  create: (title: string, board?: string) =>
+    fetch("/api/projects", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title, board }) }).then((r) =>
+      json<ProjectMeta>(r),
+    ),
+  setBoard: (id: string, board: string) =>
+    fetch(`/api/projects/${id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ board }) }).then((r) =>
       json<ProjectMeta>(r),
     ),
   markFlashed: (id: string, n: number, parts: { sketch: boolean; screen: boolean }) =>

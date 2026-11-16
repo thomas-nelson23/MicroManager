@@ -10,13 +10,14 @@ Design and decisions: [SPEC.md](SPEC.md).
 |---|---|
 | `packages/server` | Node backend: projects on disk, Claude chat (Claude Agent SDK) with build/flash/display tools, sketch builds (arduino-cli) and screen builds (Nextion Editor on a Windows VM over SSH). |
 | `packages/web` | React UI (Steeze design system): project list, project page with chat, screen preview, flashing over Web Serial. |
-| `packages/flasher` | Web Serial / Node serial library: Nano Every flashing (jtag2updi) and Nextion TFT upload. |
+| `packages/flasher` | Web Serial / WebHID / Node serial library: Nano Every flashing (jtag2updi), Teensy 4.1 flashing (HalfKay) and Nextion TFT upload. |
 | `packages/flash-test` | Standalone page for testing the flasher against hardware. |
 | `packages/server/template/sketch/NexPass.h` | The passthrough every sketch includes so the browser can reach the display through the running sketch. |
 
 ## Development
 
-Needs Node 22+, `arduino-cli` with the boards you use (`arduino-cli core install arduino:megaavr`),
+Needs Node 22+, `arduino-cli` with the boards you use (`arduino-cli core install arduino:megaavr`, and for
+the Teensy 4.1 `arduino-cli core install teensy:avr --additional-urls https://www.pjrc.com/teensy/package_teensy_index.json`),
 Python 3, OpenSSH, and a Claude Code login on this machine (or `CLAUDE_CODE_OAUTH_TOKEN`).
 
 ```bash
@@ -26,7 +27,10 @@ npm run dev -w @nextion-arduino/server                 # API on :8765, projects 
 npm run dev -w @nextion-arduino/web                    # UI on http://localhost:5174
 ```
 
-Flashing needs Chrome or Edge (Web Serial) on `localhost` or HTTPS. On a plain-HTTP LAN address,
+Flashing needs Chrome or Edge (Web Serial, plus WebHID for a Teensy) on `localhost` or HTTPS. A Teensy
+is flashed through its HalfKay bootloader: the page reboots the running sketch into it (134-baud touch),
+and the first time Chrome asks you to allow "Teensy HalfKay". A blank Teensy, or one whose sketch has
+crashed, needs its button pressed. Every build's sketch can also be downloaded as a .hex for PJRC's Teensy Loader. On a plain-HTTP LAN address,
 enable `chrome://flags/#unsafely-treat-insecure-origin-as-secure` for that origin.
 
 Screen builds need the Windows VM's user signed in to the desktop (Nextion Editor runs in that session).

@@ -43,15 +43,19 @@ export function parseIntelHex(text: string): HexImage {
         break;
       case 0x03:
       case 0x05:
-        break; // start address records: irrelevant for AVR flashing
+        break; // start address records: irrelevant for flashing
       default:
         throw new Error(`hex line ${i + 1}: unsupported record type ${type}`);
     }
   });
   if (!bytes.size) throw new Error("hex file contains no data");
-  const addrs = [...bytes.keys()];
-  const start = Math.min(...addrs);
-  const end = Math.max(...addrs) + 1;
+  // a loop, not Math.min(...keys): a Teensy image has too many bytes to spread into arguments
+  let start = Infinity;
+  let end = -Infinity;
+  for (const a of bytes.keys()) {
+    if (a < start) start = a;
+    if (a >= end) end = a + 1;
+  }
   const data = new Uint8Array(end - start).fill(0xff);
   for (const [a, b] of bytes) data[a - start] = b;
   return { start, data };

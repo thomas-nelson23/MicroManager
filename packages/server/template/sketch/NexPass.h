@@ -8,7 +8,9 @@
 // - Everything the display sends is copied to USB *and* kept for the sketch: read it with
 //   NexPass.available() / NexPass.read(), never with Serial1.read() directly.
 // - When the host starts a TFT upload (`whmi-wri size,baud,0`), NexPass switches to raw passthrough at
-//   the upload baud and stays there; the host restarts the board when the upload is done.
+//   the upload baud and stays there; the host restarts the board when the upload is done (on a Teensy,
+//   by dropping DTR, which makes NexPass reboot the board).
+// - Works on the Arduino Nano Every and the Teensy 4.1 (any of Serial1..Serial8 for the display).
 // - Send instructions with NexPass.send("t0.txt=\"hi\"") (adds the FF FF FF terminator).
 //   For 3 s after each instruction from the host, send() drops the sketch's instructions, so they
 //   can't get between the host's handshake and its next instruction (a TFT upload fails otherwise).
@@ -113,9 +115,21 @@ class NexPassClass {
   // Raw transfer for a TFT upload: never returns. The host restarts the board afterwards.
   void passthrough(long baud) {
     switchBaud(baud);
+#if defined(__IMXRT1062__)
+    bool dtrSeen = Serial.dtr();
+#endif
     for (;;) {
       while (Serial.available()) disp_->write((uint8_t)Serial.read());
       while (disp_->available()) Serial.write((uint8_t)disp_->read());
+#if defined(__IMXRT1062__)
+      // Teensy 4: the host can't reset the board through the USB serial line, so reboot when it
+      // drops DTR (closes the port) after the upload.
+      if (Serial.dtr()) dtrSeen = true;
+      else if (dtrSeen) {
+        delay(20);
+        if (!Serial.dtr()) SCB_AIRCR = 0x05FA0004;
+      }
+#endif
     }
   }
 };

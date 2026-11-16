@@ -51,10 +51,22 @@ export async function buildSketch(id: string, outDir: string): Promise<BuildPart
   ]);
   const seconds = Math.round((Date.now() - t0) / 100) / 10;
   if (r.code !== 0) return { ok: false, seconds, error: tail(r.out) };
-  const m = /uses (\d+) bytes .* Maximum is (\d+) bytes/.exec(r.out);
+  const size = sketchSize(r.out);
   await fs.copyFile(path.join(outDir, "arduino", "sketch.ino.hex"), path.join(outDir, "sketch.hex"));
   await fs.rm(path.join(outDir, "arduino"), { recursive: true, force: true });
-  return { ok: true, file: "sketch.hex", seconds, bytes: m ? Number(m[1]) : undefined, max: m ? Number(m[2]) : undefined };
+  return { ok: true, file: "sketch.hex", seconds, ...size };
+}
+
+/** Flash use from arduino-cli's compile output (AVR's "Sketch uses …" line, or Teensy's "FLASH: …" line). */
+export function sketchSize(out: string): { bytes?: number; max?: number } {
+  const avr = /uses (\d+) bytes .* Maximum is (\d+) bytes/.exec(out);
+  if (avr) return { bytes: Number(avr[1]), max: Number(avr[2]) };
+  const t = /FLASH: code:(\d+), data:(\d+), headers:(\d+)\s+free for files:(\d+)/.exec(out);
+  if (t) {
+    const used = Number(t[1]) + Number(t[2]) + Number(t[3]);
+    return { bytes: used, max: used + Number(t[4]) };
+  }
+  return {};
 }
 
 export async function buildScreen(id: string, outDir: string): Promise<BuildPart> {
