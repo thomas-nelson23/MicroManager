@@ -12,7 +12,74 @@ import argparse, json, os, re, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 COMMON = {"objname", "vscope", "x", "y", "w", "h", "0"}
+# Compact elements ({"page": ...} / {"obj": ...}), same rules as src/hmi-compact.ts.
+TYPE_ALIASES = {
+    "page": 121, "text": 116, "button": 98, "dsbutton": 53, "number": 54, "float": 59, "progress": 106,
+    "slider": 1, "gauge": 122, "waveform": 0, "picture": 112, "crop": 113, "hotspot": 109, "checkbox": 56,
+    "radio": 57, "switch": 67, "qrcode": 58, "scrolltext": 62, "timer": 51, "variable": 52,
+}
+RESERVED = {"page", "obj", "name", "on"}
 EVENTS = {"load", "loadend", "unload", "down", "up", "slide", "timer", "touchs", "ref", "vis", "init", "playend"}
+
+
+def resolve_type(t, comps):
+    if isinstance(t, int) and not isinstance(t, bool):
+        return t
+    s = str(t).strip()
+    if s.isdigit():
+        return int(s)
+    if s.lower() in TYPE_ALIASES:
+        return TYPE_ALIASES[s.lower()]
+    d = comps.get(s)
+    return int(d["id"]) if d and str(d.get("id", "")).isdigit() else None
+
+
+def event_code(v):
+    if isinstance(v, list):
+        return "\r\n".join(str(x) for x in v)
+    return re.sub(r"\r?\n", "\r\n", str(v))
+
+
+def expand(elements, comps, errs):
+    """Expand compact elements to editor commands. Returns [(command, source element number)]."""
+    out = []
+    for i, e in enumerate(elements, start=2):
+        if not isinstance(e, dict):
+            errs.append(f"element {i}: expected an object")
+            continue
+        if "com" in e:
+            out.append(({k: str(v) for k, v in e.items()}, i))
+            continue
+        if "page" in e:
+            out.append(({"com": "addpage", "pagename": str(e["page"])}, i))
+        elif "obj" in e:
+            t = resolve_type(e["obj"], comps)
+            if t is None:
+                errs.append(f"element {i}: unknown obj type {e['obj']!r}")
+                continue
+            if not e.get("name"):
+                errs.append(f"element {i}: \"obj\" needs a \"name\"")
+                continue
+            out.append(({"com": "addobj", "objtype": str(t), "objname": str(e["name"])}, i))
+        else:
+            errs.append(f"element {i}: needs \"page\", \"obj\" or \"com\"")
+            continue
+        atts = [k for k in e if k not in RESERVED]
+        atts.sort(key=lambda k: 0 if k == "txt_maxl" else 1)
+        for k in atts:
+            v = e[k]
+            if isinstance(v, (dict, list)):
+                errs.append(f"element {i}: attribute {k} must be a string or number")
+                continue
+            out.append(({"com": "setatt", "attname": k, "attval": str(v)}, i))
+        on = e.get("on")
+        if on is not None:
+            if not isinstance(on, dict):
+                errs.append(f"element {i}: \"on\" must map event names to code")
+                continue
+            for ev, code in on.items():
+                out.append(({"com": "setevent", "eventname": str(ev), "eventcode": event_code(code)}, i))
+    return out
 
 
 def main():
@@ -56,13 +123,9 @@ def main():
     cur_page, cur_type, cur_name, objs = None, None, None, {}
     pages, events = {}, []
     names_on_page, maxl = set(), {}
-    for i, c in enumerate(job[1:], start=2):
+    cmds = expand(job[1:], comps, errs)
+    for c, i in cmds:
         where = f"element {i}"
-        if not isinstance(c, dict) or "com" not in c:
-            errs.append(f"{where}: command object needs a 'com' field")
-            continue
-        for k in list(c):
-            c[k] = str(c[k])
         com = c["com"]
         if com == "addpage":
             if "pagename" not in c:
@@ -161,8 +224,8 @@ def main():
         print("ERROR:", e)
     if errs:
         return 1
-    json.dump(job, open(a.out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-    print(f"prepared {a.out}: {len(job) - 1} commands, model {s['model']} ({s['ser']}), dire {s['dire']}")
+    json.dump([s] + [c for c, _ in cmds], open(a.out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    print(f"prepared {a.out}: {len(cmds)} commands, model {s['model']} ({s['ser']}), dire {s['dire']}")
     return 0
 
 

@@ -15,6 +15,8 @@ export const config = {
   serverRoot: path.resolve(here, ".."),
 
   claudeModel: env.CLAUDE_MODEL ?? "claude-opus-5-5",
+  /** Reasoning effort for the chat: low, medium, high, xhigh or max. */
+  claudeEffort: (env.CLAUDE_EFFORT ?? "medium") as "low" | "medium" | "high" | "xhigh" | "max",
   /** Let Claude run shell commands inside the project folder (sensible inside the container only). */
   allowBash: env.ALLOW_BASH === "1",
 

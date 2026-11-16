@@ -209,7 +209,7 @@ export async function sendMessage(projectId: string, userText: string): Promise<
         cwd,
         additionalDirectories: [GUIDE_DIR],
         model: config.claudeModel,
-        effort: "high",
+        effort: config.claudeEffort,
         permissionMode: "dontAsk",
         allowedTools: allowed,
         mcpServers: { bench: benchServer(projectId, hub) },

@@ -1,18 +1,6 @@
 [
   {"dire": "0"},
-  {"com": "addpage", "pagename": "main"},
-  {"com": "addobj", "objtype": "116", "objname": "tTitle"},
-  {"com": "setatt", "attname": "x", "attval": "20"},
-  {"com": "setatt", "attname": "y", "attval": "20"},
-  {"com": "setatt", "attname": "w", "attval": "440"},
-  {"com": "setatt", "attname": "h", "attval": "40"},
-  {"com": "setatt", "attname": "txt_maxl", "attval": "40"},
-  {"com": "setatt", "attname": "txt", "attval": "New project"},
-  {"com": "addobj", "objtype": "116", "objname": "tUptime"},
-  {"com": "setatt", "attname": "x", "attval": "20"},
-  {"com": "setatt", "attname": "y", "attval": "80"},
-  {"com": "setatt", "attname": "w", "attval": "440"},
-  {"com": "setatt", "attname": "h", "attval": "40"},
-  {"com": "setatt", "attname": "txt_maxl", "attval": "20"},
-  {"com": "setatt", "attname": "txt", "attval": "0 s"}
+  {"page": "main"},
+  {"obj": "text", "name": "tTitle", "x": 20, "y": 20, "w": 440, "h": 40, "txt_maxl": 40, "txt": "New project"},
+  {"obj": "text", "name": "tUptime", "x": 20, "y": 80, "w": 440, "h": 40, "txt_maxl": 20, "txt": "0 s"}
 ]
