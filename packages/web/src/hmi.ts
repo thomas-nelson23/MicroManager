@@ -1,5 +1,6 @@
-/** Parse nextion/hmi.txt (Nextion Editor automation JSON) into pages and components for the preview. */
+/** Parse nextion/hmi.txt (compact elements and/or Nextion Editor automation commands) into pages and components for the preview. */
 import components from "@nextion-arduino/server/components.json";
+import { expandHmi } from "@nextion-arduino/server/hmi-compact";
 
 type CompDef = { id: string; atts: Record<string, { default?: string }> };
 const defs = components as unknown as Record<string, CompDef>;
@@ -46,12 +47,17 @@ export function parseHmi(text: string): { pages: HmiPage[]; error?: string } {
     return { pages: [], error: `hmi.txt is not valid JSON: ${(e as Error).message}` };
   }
   if (!Array.isArray(cmds)) return { pages: [], error: "hmi.txt must be a JSON array" };
+  let expanded;
+  try {
+    expanded = expandHmi(cmds.slice(1));
+  } catch (e) {
+    return { pages: [], error: `hmi.txt: ${(e as Error).message}` };
+  }
   const pages: HmiPage[] = [];
   let cur: HmiPage | null = null;
   let sel: HmiObject | null = null;
-  for (const raw of cmds.slice(1)) {
-    const c = raw as Record<string, unknown>;
-    const com = String(c.com ?? "");
+  for (const { cmd: c } of expanded) {
+    const com = c.com ?? "";
     if (com === "addpage") {
       const page = makeObj(121, String(c.pagename ?? `page${pages.length}`));
       cur = { name: page.name, page, objects: [] };

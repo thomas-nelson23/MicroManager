@@ -21,4 +21,5 @@
   <Config Name="Default display series" Target="DISPLAY_SERIES" Default="Intelligent" Mode="" Description="Display series for new projects." Type="Variable" Display="advanced" Required="false" Mask="false">Intelligent</Config>
   <Config Name="Default display model" Target="DISPLAY_MODEL" Default="NX4827P043_011" Mode="" Description="Display model for new projects." Type="Variable" Display="advanced" Required="false" Mask="false">NX4827P043_011</Config>
   <Config Name="Claude model" Target="CLAUDE_MODEL" Default="claude-opus-5-5" Mode="" Description="Model used by the chat." Type="Variable" Display="advanced" Required="false" Mask="false">claude-opus-5-5</Config>
+  <Config Name="Claude effort" Target="CLAUDE_EFFORT" Default="medium" Mode="" Description="Reasoning effort for the chat: low, medium, high, xhigh or max. Higher is more careful and slower." Type="Variable" Display="advanced" Required="false" Mask="false">medium</Config>
 </Container>

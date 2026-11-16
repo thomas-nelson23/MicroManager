@@ -36,6 +36,7 @@ container never touches USB.
 | `VM_EDITOR` | no | `C:\Program Files (x86)\Nextion Editor\Nextion Editor.exe` (default) |
 | `DISPLAY_SERIES` / `DISPLAY_MODEL` | no | `Intelligent` / `NX4827P043_011` (defaults for new projects) |
 | `CLAUDE_MODEL` | no | `claude-opus-5-5` (default) |
+| `CLAUDE_EFFORT` | no | `medium` (default); `low`, `high`, `xhigh` or `max` |
 
 ## Before you start: what to get from the owner
 
@@ -201,5 +202,6 @@ so the next message starts a fresh Claude session in the same project.
   <Config Name="Default display series" Target="DISPLAY_SERIES" Default="Intelligent" Mode="" Description="Display series for new projects." Type="Variable" Display="advanced" Required="false" Mask="false">Intelligent</Config>
   <Config Name="Default display model" Target="DISPLAY_MODEL" Default="NX4827P043_011" Mode="" Description="Display model for new projects." Type="Variable" Display="advanced" Required="false" Mask="false">NX4827P043_011</Config>
   <Config Name="Claude model" Target="CLAUDE_MODEL" Default="claude-opus-5-5" Mode="" Description="Model used by the chat." Type="Variable" Display="advanced" Required="false" Mask="false">claude-opus-5-5</Config>
+  <Config Name="Claude effort" Target="CLAUDE_EFFORT" Default="medium" Mode="" Description="Reasoning effort for the chat: low, medium, high, xhigh or max. Higher is more careful and slower." Type="Variable" Display="advanced" Required="false" Mask="false">medium</Config>
 </Container>
 ```

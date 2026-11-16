@@ -26,6 +26,7 @@
   },
   "exports": {
     "./protocol": "./src/protocol.ts",
+    "./hmi-compact": "./src/hmi-compact.ts",
     "./components.json": "./nextion/components.json"
   }
 }

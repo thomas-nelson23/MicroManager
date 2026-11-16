@@ -15,7 +15,7 @@ hardware.md             wiring: a "| Pin | Goes to |" table plus notes. Keep it 
                         person tells you how things are wired; read it before writing pin code.
 sketch/sketch.ino       the Arduino sketch (the folder and the main file must keep these names).
 sketch/*.h, *.cpp       more sketch files. sketch/NexPass.h is the passthrough library: don't edit it.
-nextion/hmi.txt         the screen, as Nextion Editor automation JSON (below).
+nextion/hmi.txt         the screen: a JSON array, one line per page or component (below).
 nextion/star.txt        Program.s, runs at power-on.
 nextion/font/N.zi       fonts by index (0.zi = font 0): 0.zi Arial bold 24 px, 1.zi Arial bold 48 px.
                         Text only renders in these sizes; other fonts can be added only by the person.
@@ -40,12 +40,13 @@ builds/                 numbered build outputs (read-only; the build tool writes
 
 ## Workflow
 
-1. Edit the files. Keep the sketch and the screen consistent: the component names the sketch sends to
+1. Edit the files. **Change existing files with Edit, not Write**: rewriting a whole file costs minutes
+   of typing for a big screen. Use Write only for a new file or when most of it really changes. Keep the sketch and the screen consistent: the component names the sketch sends to
    must exist in hmi.txt on that page.
 2. `check_screen` after editing hmi.txt (fast, local).
 3. `build` (target sketch, screen or both; screen builds take a few seconds on a Windows VM). Fix errors
    and build again. The screen compiler doesn't explain failures: re-check the validator output and the
-   event code, and bisect by removing setevent blocks if needed.
+   event code, and bisect by removing `"on"` entries if needed.
 4. `flash` when a build is ready and the person wants it on the device (if they asked you to make a
    change and try it, flash without asking again). They click a button in the page; you get the result.
 5. Verify on the hardware with `display` (`get t0.txt`, `get dp`, `click b0,1` …), compare with what you
@@ -53,46 +54,59 @@ builds/                 numbered build outputs (read-only; the build tool writes
 
 ## The screen: nextion/hmi.txt
 
-This is Nextion Editor's own hidden automation format (`HMIFORM.main.LoadFrom`). It's a JSON array.
-**All values are strings** (the scripts stringify numbers for you, but write strings anyway).
+A JSON array. Element 0 is the settings, then **one line per page or component**, in order:
+
+```json
+[
+  {"dire": "0"},
+  {"page": "main", "bco": 0, "on": {"loadend": "tm0.en=1"}},
+  {"obj": "text", "name": "t0", "x": 20, "y": 20, "w": 440, "h": 40, "txt_maxl": 40, "txt": "Hello"},
+  {"obj": "button", "name": "b0", "x": 20, "y": 80, "w": 140, "h": 50, "txt": "Press", "on": {"down": ["t0.txt=\"Pressed!\"", "prints \"b0\",0"]}},
+  {"obj": "timer", "name": "tm0", "tim": 1000, "en": 0, "on": {"timer": "n0.val++"}}
+]
+```
+
+- `{"page": NAME, ...}` adds a page; the first element after the settings must be a page. Its other
+  keys are page attributes (`bco`, `sta`, `pic` ...).
+- `{"obj": TYPE, "name": NAME, ...}` adds a component to the current page. TYPE is a name from the table
+  below (`text`, `button`, `slider` ...) or an objtype number. Names must be unique per page.
+- Every other key is an attribute. Numbers and strings both work. `txt_maxl` is always applied before
+  `txt`, wherever you put it.
+- `"on"` maps event names to code: a string, or an array of lines (easier to Edit).
+- Keep exactly one element per line, so a change is a one-line Edit.
+
+The build expands this to Nextion Editor's automation commands (`addpage`, `addobj`, `setatt`, `setevent`).
+Older projects may still contain those `{"com": ...}` commands; they keep working and can be mixed in,
+but write new content in the compact form.
 
 ### Element 0: settings
 Usually just `{"dire": "0"}`. The build fills in everything else from the project's display settings:
 `ser`, `model`, `dire` (0/90/180/270), `mesize`, `maxtftsize`, `ico_q`, `ram1open`, `asp100_tc`,
 `medatastring`.
 
-### Commands (elements 1..n), executed in order
-
-| com | fields | effect |
-|---|---|---|
-| `addpage` | `pagename` | Adds a page and makes it current. Object 0 of the page **is the page itself** and becomes selected. **Must come first** (the editor deletes its default page). |
-| `addobj` | `objtype`, `objname` | Adds a component to the current page and selects it. Names must be unique per page. |
-| `setatt` | `attname`, `attval` | Sets an attribute on the selected object. Special case: `attname: "0"` selects object **index** `attval` on the current page (0 = the page, 1 = first addobj, ...). Use it to set page attributes or events after adding components. |
-| `setevent` | `eventname`, `eventcode` | Replaces that event's code. Separate lines with `\r\n`. |
-
 ### Component types (most used; full list in `components.md` beside this guide)
 
-| objtype | component | name prefix | events |
-|---|---|---|---|
-| 121 | page | - | load (preinit), loadend (postinit), down, up, unload |
-| 116 | text | t | down, up |
-| 98 | button | b | down, up |
-| 53 | dual-state button | bt | down, up |
-| 54 | number | n | down, up |
-| 59 | float number (xfloat) | x | down, up |
-| 106 | progress bar | j | down, up |
-| 1 | slider | h | down, up, slide |
-| 122 | gauge | z | down, up |
-| 0 | waveform | s | down, up |
-| 112 | picture | p | down, up |
-| 113 | crop | q | down, up |
-| 109 | hotspot | m | down, up |
-| 56 / 57 | checkbox / radio | c / r | down, up |
-| 67 | switch | sw | down, up |
-| 58 | QR code | qr | down, up |
-| 62 | scrolling text | slt | down, up |
-| 51 | timer | tm | timer |
-| 52 | variable | va | - |
+| obj name | objtype | component | name prefix | events |
+|---|---|---|---|---|
+| page | 121 | page | - | load (preinit), loadend (postinit), down, up, unload |
+| text | 116 | text | t | down, up |
+| button | 98 | button | b | down, up |
+| dsbutton | 53 | dual-state button | bt | down, up |
+| number | 54 | number | n | down, up |
+| float | 59 | float number (xfloat) | x | down, up |
+| progress | 106 | progress bar | j | down, up |
+| slider | 1 | slider | h | down, up, slide |
+| gauge | 122 | gauge | z | down, up |
+| waveform | 0 | waveform | s | down, up |
+| picture | 112 | picture | p | down, up |
+| crop | 113 | crop | q | down, up |
+| hotspot | 109 | hotspot | m | down, up |
+| checkbox / radio | 56 / 57 | checkbox / radio | c / r | down, up |
+| switch | 67 | switch | sw | down, up |
+| qrcode | 58 | QR code | qr | down, up |
+| scrolltext | 62 | scrolling text | slt | down, up |
+| timer | 51 | timer | tm | timer |
+| variable | 52 | variable | va | - |
 
 Event names: `down` = Touch Press, `up` = Touch Release, `load` = Preinitialize, `loadend` =
 Postinitialize, `unload` = Page Exit, `slide` = Touch Move, `timer` = timer tick.
@@ -103,7 +117,7 @@ Frequent ones (`components.md` lists every attribute, default and range):
 
 | attribute | on | meaning |
 |---|---|---|
-| `txt`, `txt_maxl` | text, button, ... | text, and its max length (memory). **Default `txt_maxl` is 10; set it BEFORE `txt`** or the text is cut (the validator enforces this). |
+| `txt`, `txt_maxl` | text, button, ... | text, and its max length (memory). **Default `txt_maxl` is 10**: set it on every text longer than that, or the text is cut (the validator enforces this). |
 | `font` | text-like | font index (0 = first file in `font/`) |
 | `pco`, `bco` | most | text / background color (RGB565) |
 | `pco2`, `bco2` | button | pressed colors |
@@ -122,23 +136,6 @@ end means "only applies when sta=1".
 **Colors are RGB565:** `((R>>3)<<11) | ((G>>2)<<5) | (B>>3)`. Black 0, white 65535, red 63488,
 green 2016, blue 31, yellow 65504, cyan 2047, magenta 63519, gray 33808, dark gray 16904,
 orange 64800, Nextion's default button gray 50712.
-
-### Minimal example
-```json
-[
-  {"dire": "0"},
-  {"com": "addpage", "pagename": "main"},
-  {"com": "addobj", "objtype": "116", "objname": "t0"},
-  {"com": "setatt", "attname": "x", "attval": "20"},
-  {"com": "setatt", "attname": "txt_maxl", "attval": "40"},
-  {"com": "setatt", "attname": "txt", "attval": "Hello from an LLM"},
-  {"com": "addobj", "objtype": "98", "objname": "b0"},
-  {"com": "setevent", "eventname": "down", "eventcode": "t0.txt=\"Pressed!\""},
-  {"com": "setatt", "attname": "0", "attval": "0"},
-  {"com": "setatt", "attname": "bco", "attval": "0"}
-]
-```
-(The last two lines select the page, object 0, and make its background black.)
 
 ## Event code (Nextion script)
 
