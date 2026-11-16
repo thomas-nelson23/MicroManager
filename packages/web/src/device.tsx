@@ -44,6 +44,10 @@ export interface CommandResult {
 
 interface Device {
   supported: boolean;
+  /** The page was opened over plain HTTP, where browsers don't offer USB access at all. */
+  insecure: boolean;
+  /** USB ids of the chosen serial port, to recognise the board. */
+  usb: { vendorId?: number; productId?: number } | null;
   portLabel: string | null;
   display: DisplayInfo | null;
   busy: Progress | null;
@@ -112,6 +116,7 @@ function waitForTeensyPort(ms: number): Promise<SerialPort | null> {
 
 export function DeviceProvider({ children }: { children: ReactNode }) {
   const supported = typeof navigator !== "undefined" && "serial" in navigator;
+  const insecure = typeof window !== "undefined" && !window.isSecureContext;
   const [transport, setTransport] = useState<WebSerialTransport | null>(null);
   const [display, setDisplay] = useState<DisplayInfo | null>(null);
   const [busy, setBusy] = useState<Progress | null>(null);
@@ -345,6 +350,8 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
   const value = useMemo<Device>(
     () => ({
       supported,
+      insecure,
+      usb: transport ? { vendorId: transport.port.getInfo().usbVendorId, productId: transport.port.getInfo().usbProductId } : null,
       portLabel: transport ? label(transport.port) : null,
       display,
       busy,
@@ -358,7 +365,7 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
       flash,
       run,
     }),
-    [supported, transport, display, busy, board, bootloaderPrompt, setBoard, choosePort, ensurePort, allowBootloader, cancelBootloader, flash, run],
+    [supported, insecure, transport, display, busy, board, bootloaderPrompt, setBoard, choosePort, ensurePort, allowBootloader, cancelBootloader, flash, run],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

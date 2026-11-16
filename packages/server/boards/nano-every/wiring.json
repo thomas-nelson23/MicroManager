@@ -1,0 +1,8 @@
+{
+  "connections": [
+    {"pin": "TX1", "part": "Nextion display", "partPin": "RX", "color": "yellow"},
+    {"pin": "RX1", "part": "Nextion display", "partPin": "TX", "color": "blue"},
+    {"pin": "5V", "part": "Nextion display", "partPin": "5V", "color": "red"},
+    {"pin": "GND", "part": "Nextion display", "partPin": "GND", "color": "black"}
+  ]
+}

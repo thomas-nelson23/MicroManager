@@ -3,6 +3,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { type Board, boardById, boardByFqbn } from "./boards.ts";
 import { config, projectsDir } from "./config.ts";
+import { type DisplayModel, displayByModel } from "./displays.ts";
+import { parseWiring, type Wiring, wiringFromHardwareMd } from "./wiring.ts";
 
 export interface ProjectMeta {
   id: string;
@@ -34,6 +36,9 @@ export interface BuildRecord {
   sketch?: BuildPart;
   screen?: BuildPart;
   flashed?: { sketch?: string; screen?: string };
+  /** What the build was made for (FQBN and display model), to spot builds from before a hardware change. */
+  board?: string;
+  display?: string;
 }
 
 const ID_RE = /^[a-z0-9][a-z0-9-]{0,47}$/;
@@ -84,25 +89,29 @@ export async function listProjects(): Promise<ProjectMeta[]> {
   return out.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
+const toMetaDisplay = (d: DisplayModel) => ({ series: d.series, model: d.model, width: d.width, height: d.height });
+
 const boardFile = (b: Board, file: string) => path.join(config.serverRoot, "boards", b.id, file);
 
-export async function createProject(title: string, description = "", boardId?: string): Promise<ProjectMeta> {
+export async function createProject(title: string, description = "", boardId?: string, displayModel?: string): Promise<ProjectMeta> {
   const board = (boardId && boardById(boardId)) || boardByFqbn(config.defaults.board.fqbn);
+  const display = displayModel ? displayByModel(displayModel) : undefined;
   await fs.mkdir(projectsDir(), { recursive: true });
-  let id = slugify(title);
-  for (let i = 2; await exists(path.join(projectsDir(), id)); i++) id = `${slugify(title).slice(0, 36)}-${i}`;
+  const id = await freeId(title);
   const dir = projectDir(id);
   await fs.cp(path.join(config.serverRoot, "template"), dir, { recursive: true });
   await fs.mkdir(path.join(dir, "builds"), { recursive: true });
   if (board) await fs.copyFile(boardFile(board, "hardware.md"), path.join(dir, "hardware.md"));
   else await fs.writeFile(path.join(dir, "hardware.md"), "# Hardware\n\nDisplay: Nextion on Serial1 at 9600 baud.\n");
+  if (board) await fs.copyFile(boardFile(board, "wiring.json"), path.join(dir, "wiring.json"));
+  else await fs.writeFile(path.join(dir, "wiring.json"), '{"connections": []}\n');
   const now = new Date().toISOString();
   const meta: ProjectMeta = {
     id,
     title: title.trim() || "New project",
     description,
     board: board ? { fqbn: board.fqbn, name: board.name } : { ...config.defaults.board },
-    display: { ...config.defaults.display },
+    display: display ? toMetaDisplay(display) : { ...config.defaults.display },
     createdAt: now,
     updatedAt: now,
   };
@@ -124,9 +133,85 @@ export async function setBoard(meta: ProjectMeta, board: Board): Promise<void> {
     old ? fs.readFile(boardFile(old, "hardware.md"), "utf8").catch(() => null) : null,
   ]);
   if (!cur.trim() || cur === oldTpl) await fs.copyFile(boardFile(board, "hardware.md"), hw);
+  // Same for wiring.json: a project still on the old board's stock wiring gets the new board's.
+  const wj = path.join(dir, "wiring.json");
+  const [curW, oldW] = await Promise.all([
+    fs.readFile(wj, "utf8").catch(() => null),
+    old ? fs.readFile(boardFile(old, "wiring.json"), "utf8").catch(() => null) : null,
+  ]);
+  if (curW !== null ? curW === oldW : !cur.trim() || cur === oldTpl) await fs.copyFile(boardFile(board, "wiring.json"), wj);
   await fs.copyFile(path.join(config.serverRoot, "template", "sketch", "NexPass.h"), path.join(dir, "sketch", "NexPass.h"));
   meta.board = { fqbn: board.fqbn, name: board.name };
   await writeMeta(meta);
+}
+
+/** Switch a project to another display. The screen's layout is left alone: Claude adapts it when asked. */
+export async function setDisplay(meta: ProjectMeta, display: DisplayModel): Promise<void> {
+  meta.display = toMetaDisplay(display);
+  await writeMeta(meta);
+}
+
+/** The project's wiring: wiring.json, or for older projects the table in hardware.md. */
+export async function readWiring(id: string): Promise<{ wiring: Wiring; source: "file" | "hardware.md"; error?: string }> {
+  const dir = projectDir(id);
+  const text = await fs.readFile(path.join(dir, "wiring.json"), "utf8").catch(() => null);
+  if (text !== null) return { ...parseWiring(text), source: "file" };
+  const md = await fs.readFile(path.join(dir, "hardware.md"), "utf8").catch(() => "");
+  return { wiring: wiringFromHardwareMd(md), source: "hardware.md" };
+}
+
+export interface ProjectSummary extends ProjectMeta {
+  lastBuild?: { n: number; ok: boolean; createdAt: string };
+  onDevice?: number;
+}
+
+export async function listProjectSummaries(): Promise<ProjectSummary[]> {
+  const metas = await listProjects();
+  return Promise.all(
+    metas.map(async ({ sessionId: _s, ...m }) => {
+      const builds = await listBuilds(m.id).catch(() => []);
+      const b = builds[0];
+      const flashed = builds.filter((x) => x.flashed?.sketch || x.flashed?.screen).sort((x, y) => ((y.flashed!.sketch ?? y.flashed!.screen)! > (x.flashed!.sketch ?? x.flashed!.screen)! ? 1 : -1))[0];
+      return {
+        ...m,
+        ...(b ? { lastBuild: { n: b.n, ok: (!b.sketch || b.sketch.ok) && (!b.screen || b.screen.ok), createdAt: b.createdAt } } : {}),
+        ...(flashed ? { onDevice: flashed.n } : {}),
+      };
+    }),
+  );
+}
+
+async function freeId(title: string): Promise<string> {
+  let id = slugify(title);
+  for (let i = 2; await exists(path.join(projectsDir(), id)); i++) id = `${slugify(title).slice(0, 36)}-${i}`;
+  return id;
+}
+
+/** Copy a project's sources (not its builds or its conversation) into a new project. */
+export async function duplicateProject(srcId: string, title: string): Promise<ProjectMeta> {
+  const src = await readMeta(srcId);
+  const id = await freeId(title);
+  const dir = projectDir(id);
+  await fs.cp(projectDir(srcId), dir, {
+    recursive: true,
+    filter: (p) => {
+      const rel = path.relative(projectDir(srcId), p);
+      return !(rel === "builds" || rel.startsWith(`builds${path.sep}`) || rel === "uploads" || rel.startsWith(`uploads${path.sep}`) || path.basename(rel).startsWith(".chat"));
+    },
+  });
+  await fs.mkdir(path.join(dir, "builds"), { recursive: true });
+  const now = new Date().toISOString();
+  const { sessionId: _s, ...rest } = src;
+  const meta: ProjectMeta = { ...rest, id, title: title.trim() || `${src.title} copy`, createdAt: now, updatedAt: now };
+  await writeMeta(meta);
+  return meta;
+}
+
+/** Remove a project from the list. Its folder is moved to <data>/trash, not erased. */
+export async function deleteProject(id: string): Promise<void> {
+  const trash = path.join(config.dataDir, "trash");
+  await fs.mkdir(trash, { recursive: true });
+  await fs.rename(projectDir(id), path.join(trash, `${id}-${Date.now()}`));
 }
 
 export async function listBuilds(id: string): Promise<BuildRecord[]> {
@@ -169,7 +254,7 @@ export async function listFiles(id: string): Promise<FileEntry[]> {
       if (ent.name.startsWith(".")) continue;
       const r = rel ? `${rel}/${ent.name}` : ent.name;
       if (ent.isDirectory()) {
-        if (r === "builds" || r === "nextion/out") continue;
+        if (r === "builds" || r === "nextion/out" || r === "uploads") continue;
         await walk(r);
       } else {
         out.push({ path: r, bytes: (await fs.stat(path.join(root, r))).size });

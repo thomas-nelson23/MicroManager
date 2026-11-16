@@ -11,8 +11,12 @@ your file edits and tool calls on its own, so don't repeat them as lists.
 project.json            title, description, board (FQBN) and display (series, model, size). You may
                         update "title" and "description" when the person describes the project; leave
                         the rest and never touch sessionId.
-hardware.md             wiring: a "| Pin | Goes to |" table plus notes. Keep it current whenever the
-                        person tells you how things are wired; read it before writing pin code.
+wiring.json             the wiring, as data: {"connections": [{"pin": "D4", "part": "IR receiver",
+                        "partPin": "OUT", "color": "yellow"}, ...]}, one connection per line. The page
+                        draws it on the board and checks it. Keep it current whenever wiring changes or
+                        the person tells you how things are wired; read it before writing pin code.
+hardware.md             notes about the hardware that don't fit wiring.json (voltages, part numbers,
+                        mounting). No pin table here.
 sketch/sketch.ino       the Arduino sketch (the folder and the main file must keep these names).
 sketch/*.h, *.cpp       more sketch files. sketch/NexPass.h is the passthrough library: don't edit it.
 nextion/hmi.txt         the screen: a JSON array, one line per page or component (below).
@@ -36,7 +40,7 @@ builds/                 numbered build outputs (read-only; the build tool writes
 - Simple two-way pattern: a button's `down` event does `prints "fan=1",0` and the sketch reads text up to
   a terminator, or the sketch reads Nextion touch events (0x65 page component event FF FF FF).
 - Write for the project's board (named at the end of these instructions). The display is on Serial1
-  unless hardware.md says otherwise; pass that port to `NexPass.begin()`.
+  unless wiring.json says otherwise; pass that port to `NexPass.begin()`.
 - Third-party libraries: install what the sketch needs with `install_library` (exact name from the
   Arduino library index, e.g. "DHT sensor library"), then build. Prefer well-known libraries.
 
@@ -47,13 +51,33 @@ builds/                 numbered build outputs (read-only; the build tool writes
 - **Teensy 4.1** (`teensy:avr:teensy41`): 600 MHz Cortex-M7, 8 MB flash, 1 MB RAM, FPU, `float` and
   `double` are cheap. **3.3 V logic and the pins are not 5 V tolerant**: never wire a 5 V sensor
   output straight to a pin, say so when the person describes one, and put a level shifter or divider
-  in hardware.md. Hardware serial ports Serial1..Serial8 (Serial1 = pins 0 RX / 1 TX), analog reads are
+  in wiring.json and hardware.md. Hardware serial ports Serial1..Serial8 (Serial1 = pins 0 RX / 1 TX), analog reads are
   10-bit by default (`analogReadResolution(12)` for 12-bit), PWM on most pins, `analogWrite` resolution
   via `analogWriteResolution()`. `Serial` is native USB and owned by NexPass. Teensyduino ships many
   libraries already (Wire, SPI, Servo, Encoder, OneWire, FastLED, Audio, …): try building before
   installing one, because an installed copy can shadow the Teensy-optimised one.
 - The person chooses the board on the project page. When they switch, the sketch's NexPass.h is
-  refreshed; adapt pin numbers, ports and hardware.md to the new board.
+  refreshed; adapt pin numbers, ports, wiring.json and hardware.md to the new board. They choose the
+  display there too; when its resolution changes, move and resize the components to fit, and if element 0
+  of hmi.txt names a `model` or `ser`, remove those keys so the project's display applies.
+
+## Wiring: wiring.json
+
+- One entry per wire. `pin` is the board pin as printed on the board (Nano Every: `D2`..`D13`, `A0`..`A7`,
+  `TX1`, `RX1`, `5V`, `3V3`, `GND`, `VIN`; Teensy 4.1: `0`..`41`, `VIN`, `3V3`, `GND`). `part` is a short
+  name for the thing ("IR receiver", "Fan relay"), the same for all of that part's wires. `partPin` is the
+  pin on the part ("OUT", "VCC", "GND", "SDA").
+- List every wire, power and ground too, so the person can wire it from the picture alone.
+- `color` is optional (a plain colour word). Add `"signal": "5V"` to a wire where the part drives 5 V into a
+  board pin: the page warns when the board can't take it.
+- Add a part together with the code that uses it, and name pins in the sketch with constants
+  (`const int IR_PIN = 4;`) so the page can match the sketch to the wiring.
+- A project without wiring.json is an older one: create the file from the table in hardware.md, then
+  remove the table from hardware.md.
+- A message like "Add an IR receiver on D4" may come from a click on the wiring picture. Treat it like
+  any request: update wiring.json and the sketch together, and say what else the part needs (resistor,
+  library, supply voltage).
+- Pictures the person attaches are saved under uploads/ and named in their message: Read them.
 
 ## Workflow
 

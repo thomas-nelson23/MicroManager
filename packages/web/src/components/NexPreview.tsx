@@ -9,11 +9,15 @@ interface Props {
   fonts: { index: number; height: number }[];
   /** Rendered width in CSS px; the screen scales to fit. */
   displayWidth: number;
+  /** Name of the component to outline. */
+  highlight?: string | null;
+  onHover?: (name: string | null) => void;
+  onPick?: (name: string) => void;
 }
 
 const INVISIBLE = new Set([51, 52, 109]); // timer, variable, hotspot
 
-export function NexPreview({ page, width, height, fonts, displayWidth }: Props) {
+export function NexPreview({ page, width, height, fonts, displayWidth, highlight, onHover, onPick }: Props) {
   const scale = displayWidth / width;
   const pageBg = page.page.num("sta", 1) === 1 ? rgb565(page.page.num("bco", 65535)) : "#000";
   return (
@@ -27,6 +31,18 @@ export function NexPreview({ page, width, height, fonts, displayWidth }: Props) 
         {page.objects.filter((o) => !INVISIBLE.has(o.type)).map((o, i) => (
           <Obj key={`${o.name}-${i}`} o={o} fonts={fonts} />
         ))}
+        {(onHover || onPick || highlight) &&
+          page.objects.filter((o) => !INVISIBLE.has(o.type)).map((o, i) => (
+            <div
+              key={`hit-${o.name}-${i}`}
+              className={`nex-hit ${highlight === o.name ? "on" : ""}`}
+              style={{ position: "absolute", left: o.num("x"), top: o.num("y"), width: o.num("w", 100), height: o.num("h", 30), outlineWidth: Math.max(1, 2 / scale) }}
+              title={`${o.name} · ${o.typeName}`}
+              onMouseEnter={() => onHover?.(o.name)}
+              onMouseLeave={() => onHover?.(null)}
+              onClick={() => onPick?.(o.name)}
+            />
+          ))}
       </div>
     </div>
   );

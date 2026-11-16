@@ -20,7 +20,9 @@ export function useProject(id: string) {
   }, [id]);
 
   const send = useCallback((msg: ClientMessage) => {
-    if (ws.current?.readyState === WebSocket.OPEN) ws.current.send(JSON.stringify(msg));
+    if (ws.current?.readyState !== WebSocket.OPEN) return false;
+    ws.current.send(JSON.stringify(msg));
+    return true;
   }, []);
 
   useEffect(() => {
@@ -80,13 +82,15 @@ export function useProject(id: string) {
   }, [id, reload, send]);
 
   return {
+    id,
     detail,
     error,
     events,
     busy,
     connected,
     reload,
-    sendText: (text: string) => send({ type: "send", text }),
+    /** False when the message could not be sent (no connection): keep the draft. */
+    sendText: (text: string, images?: { name: string; dataUrl: string }[]) => send({ type: "send", text, ...(images?.length ? { images } : {}) }),
     interrupt: () => send({ type: "interrupt" }),
     flashResult: (eventId: string, status: "done" | "failed" | "skipped", message?: string) => send({ type: "flash_result", id: eventId, status, message }),
   };

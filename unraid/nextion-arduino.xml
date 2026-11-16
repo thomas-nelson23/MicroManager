@@ -22,4 +22,5 @@
   <Config Name="Default display model" Target="DISPLAY_MODEL" Default="NX4827P043_011" Mode="" Description="Display model for new projects." Type="Variable" Display="advanced" Required="false" Mask="false">NX4827P043_011</Config>
   <Config Name="Claude model" Target="CLAUDE_MODEL" Default="claude-opus-5-5" Mode="" Description="Model used by the chat." Type="Variable" Display="advanced" Required="false" Mask="false">claude-opus-5-5</Config>
   <Config Name="Claude effort" Target="CLAUDE_EFFORT" Default="medium" Mode="" Description="Reasoning effort for the chat: low, medium, high, xhigh or max. Higher is more careful and slower." Type="Variable" Display="advanced" Required="false" Mask="false">medium</Config>
+  <Config Name="Public URL" Target="PUBLIC_URL" Default="" Mode="" Description="HTTPS address of the app. The page links to it when opened over plain HTTP, where browsers block flashing." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
 </Container>

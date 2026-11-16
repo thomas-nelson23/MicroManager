@@ -115,7 +115,8 @@ export async function build(id: string, target: "sketch" | "screen" | "both", la
   const n = await nextBuildNumber(id);
   const outDir = path.join(projectDir(id), "builds", String(n));
   await fs.mkdir(outDir, { recursive: true });
-  const rec: BuildRecord = { n, label: label.slice(0, 80) || `Build ${n}`, createdAt: new Date().toISOString() };
+  const meta = await readMeta(id);
+  const rec: BuildRecord = { n, label: label.slice(0, 80) || `Build ${n}`, createdAt: new Date().toISOString(), board: meta.board.fqbn, display: meta.display.model };
   const [sketch, screen] = await Promise.all([
     target !== "screen" ? buildSketch(id, outDir) : undefined,
     target !== "sketch" ? buildScreen(id, outDir) : undefined,
@@ -128,6 +129,8 @@ export async function build(id: string, target: "sketch" | "screen" | "both", la
     const p = prev?.[half];
     if (!rec[half] && p?.ok && p.file) {
       await fs.copyFile(path.join(projectDir(id), "builds", String(prev!.n), p.file), path.join(outDir, p.file));
+      // a half built for other hardware is not carried over
+      if (half === "sketch" ? prev!.board && prev!.board !== rec.board : prev!.display && prev!.display !== rec.display) continue;
       rec[half] = { ...p, error: undefined, fromBuild: p.fromBuild ?? prev!.n };
     }
   }
