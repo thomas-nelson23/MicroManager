@@ -1,12 +1,16 @@
 /** Placeholder landing page: pick a project or create one. (The real landing page comes later.) */
 import { useEffect, useState } from "react";
 import { ago, api, type ProjectMeta } from "../api.ts";
+import { BoardPicker, useBoards } from "../components/BoardPicker.tsx";
 import { Icon } from "../components/Icon.tsx";
 
 export function ProjectList({ navigate }: { navigate: (to: string) => void }) {
   const [projects, setProjects] = useState<ProjectMeta[] | null>(null);
   const [title, setTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const boards = useBoards();
+  const [boardId, setBoardId] = useState<string | null>(null);
+  const board = boards.find((b) => b.id === boardId) ?? boards[0];
 
   useEffect(() => {
     api.projects().then(setProjects, (e: Error) => setError(e.message));
@@ -14,7 +18,7 @@ export function ProjectList({ navigate }: { navigate: (to: string) => void }) {
 
   const create = async () => {
     try {
-      const p = await api.create(title.trim() || "New project");
+      const p = await api.create(title.trim() || "New project", board?.id);
       navigate(`/p/${p.id}`);
     } catch (e) {
       setError((e as Error).message);
@@ -36,6 +40,7 @@ export function ProjectList({ navigate }: { navigate: (to: string) => void }) {
             <input id="new-title" className="text-input" value={title} placeholder="Greenhouse monitor" onChange={(e) => setTitle(e.target.value)} />
             <button className="btn md primary" type="submit"><Icon name="plus" />Create</button>
           </div>
+          <BoardPicker fqbn={board?.fqbn} onPick={(b) => setBoardId(b.id)} />
         </form>
         <div className="cards">
           {projects?.map((p) => (

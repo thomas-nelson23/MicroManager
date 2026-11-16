@@ -7,7 +7,8 @@ import { WebSocketServer } from "ws";
 import { interrupt, sendMessage } from "./chat.ts";
 import { config } from "./config.ts";
 import { hubFor } from "./hub.ts";
-import { createProject, listBuilds, listFiles, listProjects, markFlashed, projectDir, readMeta, safePath, writeMeta } from "./projects.ts";
+import { BOARDS, boardById } from "./boards.ts";
+import { createProject, listBuilds, listFiles, listProjects, markFlashed, projectDir, readMeta, safePath, setBoard, writeMeta } from "./projects.ts";
 
 const app = new Hono();
 
@@ -15,11 +16,13 @@ app.onError((err, c) => c.json({ error: err.message }, /bad project id|outside t
 
 app.get("/api/health", (c) => c.json({ ok: true }));
 
+app.get("/api/boards", (c) => c.json(BOARDS));
+
 app.get("/api/projects", async (c) => c.json(await listProjects()));
 
 app.post("/api/projects", async (c) => {
   const body = await c.req.json().catch(() => ({}));
-  const meta = await createProject(String(body.title ?? "New project"), String(body.description ?? ""));
+  const meta = await createProject(String(body.title ?? "New project"), String(body.description ?? ""), typeof body.board === "string" ? body.board : undefined);
   return c.json(meta, 201);
 });
 
@@ -44,6 +47,16 @@ app.patch("/api/projects/:id", async (c) => {
   const body = await c.req.json();
   if (typeof body.title === "string") meta.title = body.title.slice(0, 80);
   if (typeof body.description === "string") meta.description = body.description.slice(0, 400);
+  if (typeof body.board === "string" && body.board) {
+    const board = boardById(body.board);
+    if (!board) return c.json({ error: `unknown board: ${body.board}` }, 400);
+    if (hubFor(meta.id).busy) return c.json({ error: "Claude is working on this project; try again when it's done" }, 409);
+    if (board.fqbn !== meta.board.fqbn) {
+      await setBoard(meta, board);
+      hubFor(meta.id).broadcast({ type: "project_changed" });
+      return c.json(meta);
+    }
+  }
   await writeMeta(meta);
   return c.json(meta);
 });

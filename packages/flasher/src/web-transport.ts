@@ -7,7 +7,16 @@ export class WebSerialTransport implements SerialTransport {
   private pump: Promise<void> | null = null;
   private opened = false;
 
-  constructor(readonly port: SerialPort) {}
+  constructor(public port: SerialPort) {}
+
+  /**
+   * Point the closed transport at another SerialPort: a Teensy shows up as a new port each time it
+   * reboots, because its USB serial is part of the sketch.
+   */
+  rebind(port: SerialPort) {
+    if (this.opened) throw new Error("close the port before rebinding it");
+    this.port = port;
+  }
 
   /** Ask the user to pick a port (must be called from a click handler). */
   static async request(filters?: SerialPortFilter[]): Promise<WebSerialTransport> {

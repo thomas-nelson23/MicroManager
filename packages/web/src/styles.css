@@ -85,5 +85,6 @@ h1 { margin: 0; font: 600 28px/1.15 var(--font-sans); color: var(--text-bright);
 .list-main { width: 100%; max-width: var(--page-max); margin: 0 auto; padding: 32px 24px; display: flex; flex-direction: column; gap: 20px; overflow: auto; }
 .new-project { display: flex; flex-direction: column; gap: 8px; max-width: 560px; }
 .new-project .row { display: flex; gap: 8px; }
+.new-project .seg { align-self: flex-start; }
 .project-card { display: flex; flex-direction: column; gap: 8px; text-decoration: none; color: var(--text); }
 .project-card:hover { --edge: var(--focus); }

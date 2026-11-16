@@ -162,13 +162,18 @@ export class Nextion {
 
 /**
  * Open the passthrough and connect to the display. If it doesn't answer (e.g. the bridge is still at the
- * upload baud after a previous upload), reset the board with a 1200-baud touch and try once more.
+ * upload baud after a previous upload), reset the board (`reset`, a Nano Every restart by default) and
+ * try once more.
  */
-export async function openDisplay(port: SerialTransport, hostBaud = 115200): Promise<{ nex: Nextion; info: DisplayInfo }> {
+export async function openDisplay(
+  port: SerialTransport,
+  hostBaud = 115200,
+  reset: (port: SerialTransport) => Promise<void> = resetBoard,
+): Promise<{ nex: Nextion; info: DisplayInfo }> {
   const nex = new Nextion(port);
-  for (const reset of [false, true]) {
-    if (reset) {
-      await resetBoard(port);
+  for (const again of [false, true]) {
+    if (again) {
+      await reset(port);
     }
     if (!port.isOpen) await port.open(hostBaud);
     await sleep(500);

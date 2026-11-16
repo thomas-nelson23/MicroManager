@@ -23,11 +23,13 @@ RUN apt-get update \
  && arduino-cli version
 
 # Board cores are baked into the image; libraries Claude installs go to /data (persistent).
+# The Teensy core (teensy:avr, for the Teensy 4.1) comes from PJRC's board manager index.
 ENV ARDUINO_DIRECTORIES_DATA=/opt/arduino \
     ARDUINO_DIRECTORIES_DOWNLOADS=/opt/arduino/staging \
-    ARDUINO_DIRECTORIES_USER=/data/arduino
+    ARDUINO_DIRECTORIES_USER=/data/arduino \
+    ARDUINO_BOARD_MANAGER_ADDITIONAL_URLS=https://www.pjrc.com/teensy/package_teensy_index.json
 RUN arduino-cli core update-index \
- && arduino-cli core install arduino:megaavr arduino:avr \
+ && arduino-cli core install arduino:megaavr arduino:avr teensy:avr \
  && rm -rf /opt/arduino/staging
 
 WORKDIR /app

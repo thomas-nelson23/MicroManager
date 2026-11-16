@@ -82,7 +82,7 @@ function FlashCard({ ev, project }: { ev: FlashEv; project: ProjectState }) {
   const [running, setRunning] = useState(false);
   const parts = [ev.sketch && "sketch", ev.screen && "screen"].filter(Boolean).join(" and ");
   const flash = async () => {
-    if (!device.portLabel && !(await device.choosePort())) return;
+    if (!(await device.ensurePort())) return;
     setRunning(true);
     const r = await device.flash({ sketchUrl: ev.sketch, screenUrl: ev.screen, expectModel: project.detail?.meta.display.model });
     setRunning(false);
@@ -104,7 +104,7 @@ function FlashCard({ ev, project }: { ev: FlashEv; project: ProjectState }) {
             <button className="btn md quiet" type="button" onClick={() => project.flashResult(ev.id, "skipped", "skipped by the person")}>Skip</button>
             <button className="btn md primary" type="button" onClick={flash}>
               <Icon name="zap" />
-              {device.portLabel ? `Flash ${parts}` : "Choose port and flash"}
+              {device.portLabel || device.board === "teensy" ? `Flash ${parts}` : "Choose port and flash"}
             </button>
           </>
         )}

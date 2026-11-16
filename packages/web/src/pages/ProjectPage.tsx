@@ -1,10 +1,11 @@
 /** The project page: chat on the left, the project overview (stats and cards) on the right. */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ago, api, type BuildRecord, kb, type ProjectDetail } from "../api.ts";
+import { BoardPicker } from "../components/BoardPicker.tsx";
 import { ChatPanel } from "../components/ChatPanel.tsx";
 import { Icon } from "../components/Icon.tsx";
 import { NexPreview } from "../components/NexPreview.tsx";
-import { useDevice } from "../device.tsx";
+import { boardKind, useDevice } from "../device.tsx";
 import { parseHmi } from "../hmi.ts";
 import { useProject } from "../useProject.ts";
 
@@ -12,6 +13,10 @@ export function ProjectPage({ id, navigate }: { id: string; navigate: (to: strin
   const project = useProject(id);
   const { detail, error } = project;
   const device = useDevice();
+  const fqbn = detail?.meta.board.fqbn;
+  useEffect(() => {
+    if (fqbn) device.setBoard(boardKind(fqbn));
+  }, [fqbn, device.setBoard]);
 
   if (error) {
     return (
@@ -39,7 +44,7 @@ export function ProjectPage({ id, navigate }: { id: string; navigate: (to: strin
           {detail ? <Overview detail={detail} onFlashed={project.reload} /> : <div className="empty">Loading…</div>}
         </main>
       </div>
-      {device.busy && !project.events.some((e) => e.kind === "flash" && e.status === "waiting") && <BusyToast />}
+      {device.bootloaderPrompt ? <BootloaderPrompt /> : device.busy && !project.events.some((e) => e.kind === "flash" && e.status === "waiting") && <BusyToast />}
     </div>
   );
 }
@@ -58,6 +63,27 @@ function DeviceStatus() {
         {device.portLabel ? "Change port…" : "Choose port…"}
       </button>
     </>
+  );
+}
+
+/** WebHID can only be granted from a click, so the first Teensy flash stops here once. */
+function BootloaderPrompt() {
+  const device = useDevice();
+  return (
+    <div className="msg toast info busy-toast" role="alertdialog" aria-label="Allow the Teensy bootloader">
+      <span className="led" />
+      <div className="body">
+        <b>Allow the Teensy bootloader</b>
+        <span>Pick “Teensy HalfKay” in the list Chrome shows. If the list is empty, press the button on the Teensy first.</span>
+        <div className="row">
+          <button className="btn md quiet" type="button" onClick={device.cancelBootloader}>Cancel</button>
+          <button className="btn md primary" type="button" onClick={() => void device.allowBootloader()}>
+            <Icon name="zap" />
+            Allow and flash
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -95,7 +121,7 @@ function Overview({ detail, onFlashed }: { detail: ProjectDetail; onFlashed: () 
   const [flashMsg, setFlashMsg] = useState<string | null>(null);
 
   const flashBuild = async (b: BuildRecord) => {
-    if (!device.portLabel && !(await device.choosePort())) return;
+    if (!(await device.ensurePort())) return;
     setFlashMsg(null);
     const sketchUrl = b.sketch?.ok && b.sketch.file ? api.buildFileUrl(meta.id, b.n, b.sketch.file) : undefined;
     const screenUrl = b.screen?.ok && b.screen.file ? api.buildFileUrl(meta.id, b.n, b.screen.file) : undefined;
@@ -158,14 +184,14 @@ function Overview({ detail, onFlashed }: { detail: ProjectDetail; onFlashed: () 
         <div className="card stat">
           <span className="eyebrow">Device</span>
           <span className="value small">{device.portLabel ? "Connected" : "None"}</span>
-          <span className="delta">{device.display ? `${device.display.model} · fw ${device.display.firmware}` : device.portLabel ? "display not checked yet" : "choose the Arduino's port"}</span>
+          <span className="delta">{device.display ? `${device.display.model} · fw ${device.display.firmware}` : device.portLabel ? "display not checked yet" : "choose the board's port"}</span>
         </div>
       </div>
 
       <div className="cards-2">
         <ScreenCard detail={detail} />
         <SketchCard detail={detail} />
-        <HardwareCard detail={detail} />
+        <HardwareCard detail={detail} onChanged={onFlashed} />
         <BuildsCard detail={detail} onFlash={flashBuild} />
       </div>
     </>
@@ -238,7 +264,21 @@ function SketchCard({ detail }: { detail: ProjectDetail }) {
   );
 }
 
-function HardwareCard({ detail }: { detail: ProjectDetail }) {
+function HardwareCard({ detail, onChanged }: { detail: ProjectDetail; onChanged: () => void }) {
+  const [boardError, setBoardError] = useState<string | null>(null);
+  const [switching, setSwitching] = useState(false);
+  const pick = async (id: string) => {
+    setBoardError(null);
+    setSwitching(true);
+    try {
+      await api.setBoard(detail.meta.id, id);
+      onChanged();
+    } catch (e) {
+      setBoardError((e as Error).message);
+    } finally {
+      setSwitching(false);
+    }
+  };
   const rows = detail.hardware
     .split("\n")
     .filter((l) => /^\s*\|/.test(l) && !/^\s*\|[\s:|-]+\|\s*$/.test(l))
@@ -253,8 +293,9 @@ function HardwareCard({ detail }: { detail: ProjectDetail }) {
     <section className="card">
       <div className="card-head">
         <h2 className="h3">Hardware</h2>
-        <span className="note">hardware.md</span>
+        <BoardPicker fqbn={detail.meta.board.fqbn} disabled={switching || detail.busy} onPick={(b) => void pick(b.id)} />
       </div>
+      {boardError && <p className="card-text bad">{boardError}</p>}
       {notes && <p className="card-text">{notes}</p>}
       {body.length > 0 ? (
         <table className="table dense">
@@ -304,6 +345,17 @@ function BuildsCard({ detail, onFlash }: { detail: ProjectDetail; onFlash: (b: B
                   <td>{b.label}</td>
                   <td className={s.cls}>{s.text}</td>
                   <td className="num">
+                    {b.sketch?.ok && b.sketch.file && s.cls !== "hot" && (
+                      <a
+                        className="btn quiet"
+                        href={api.buildFileUrl(detail.meta.id, b.n, b.sketch.file)}
+                        download={`${detail.meta.id}-build${b.n}.hex`}
+                        title="Download the sketch (for Teensy Loader or another flasher)"
+                        aria-label={`Download build ${b.n} sketch hex`}
+                      >
+                        .hex
+                      </a>
+                    )}
                     {flashable && (
                       <button className="btn quiet" type="button" disabled={!!device.busy} onClick={() => onFlash(b)} aria-label={`Flash build ${b.n}`}>
                         Flash
