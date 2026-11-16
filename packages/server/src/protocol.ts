@@ -1,7 +1,7 @@
 /** WebSocket protocol between the server and the web UI (one socket per open project page). */
 
 export type ChatEvent =
-  | { kind: "user"; id: string; text: string; at: string }
+  | { kind: "user"; id: string; text: string; at: string; /** Project-relative paths of attached pictures. */ images?: string[] }
   | { kind: "text"; id: string; text: string }
   | { kind: "tool"; id: string; name: string; label: string; detail?: string }
   | { kind: "tool_result"; id: string; ok: boolean; summary: string }
@@ -29,7 +29,7 @@ export type ServerMessage =
   | { type: "device_request"; id: string; commands: string[]; listenSeconds?: number };
 
 export type ClientMessage =
-  | { type: "send"; text: string }
+  | { type: "send"; text: string; /** Attached pictures as data URLs. */ images?: { name: string; dataUrl: string }[] }
   | { type: "interrupt" }
   | { type: "flash_result"; id: string; status: "done" | "failed" | "skipped"; message?: string }
   | { type: "device_result"; id: string; ok: boolean; replies?: unknown[]; error?: string };

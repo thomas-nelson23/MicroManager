@@ -92,6 +92,14 @@ export class ProjectHub {
     this.broadcast({ type: "update", id, patch });
   }
 
+  /** Start a fresh conversation: the old log is kept on disk under another name. */
+  async reset() {
+    await this.load();
+    await fs.rename(this.logFile, path.join(projectDir(this.projectId), `.chat-${Date.now()}.jsonl`)).catch(() => {});
+    this.events = [];
+    this.broadcast({ type: "hello", events: [], busy: this.busy });
+  }
+
   setBusy(busy: boolean) {
     this.busy = busy;
     this.broadcast({ type: "busy", busy });

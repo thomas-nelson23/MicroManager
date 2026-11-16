@@ -14,6 +14,9 @@ export const config = {
   webDist: env.WEB_DIST ? path.resolve(env.WEB_DIST) : undefined,
   serverRoot: path.resolve(here, ".."),
 
+  /** The app's HTTPS address, if it has one: shown to people who open it over plain HTTP, where browsers block USB. */
+  publicUrl: env.PUBLIC_URL ?? "",
+
   claudeModel: env.CLAUDE_MODEL ?? "claude-opus-5-5",
   /** Reasoning effort for the chat: low, medium, high, xhigh or max. */
   claudeEffort: (env.CLAUDE_EFFORT ?? "medium") as "low" | "medium" | "high" | "xhigh" | "max",

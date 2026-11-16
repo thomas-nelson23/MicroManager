@@ -37,6 +37,7 @@ container never touches USB.
 | `DISPLAY_SERIES` / `DISPLAY_MODEL` | no | `Intelligent` / `NX4827P043_011` (defaults for new projects) |
 | `CLAUDE_MODEL` | no | `claude-opus-5-5` (default) |
 | `CLAUDE_EFFORT` | no | `medium` (default); `low`, `high`, `xhigh` or `max` |
+| `PUBLIC_URL` | no | The HTTPS address of the app, e.g. `https://arduino.example.com`. When someone opens the app over plain HTTP, where browsers block flashing, the page links here. |
 
 ## Before you start: what to get from the owner
 
@@ -203,5 +204,6 @@ so the next message starts a fresh Claude session in the same project.
   <Config Name="Default display model" Target="DISPLAY_MODEL" Default="NX4827P043_011" Mode="" Description="Display model for new projects." Type="Variable" Display="advanced" Required="false" Mask="false">NX4827P043_011</Config>
   <Config Name="Claude model" Target="CLAUDE_MODEL" Default="claude-opus-5-5" Mode="" Description="Model used by the chat." Type="Variable" Display="advanced" Required="false" Mask="false">claude-opus-5-5</Config>
   <Config Name="Claude effort" Target="CLAUDE_EFFORT" Default="medium" Mode="" Description="Reasoning effort for the chat: low, medium, high, xhigh or max. Higher is more careful and slower." Type="Variable" Display="advanced" Required="false" Mask="false">medium</Config>
+  <Config Name="Public URL" Target="PUBLIC_URL" Default="" Mode="" Description="HTTPS address of the app. The page links to it when opened over plain HTTP, where browsers block flashing." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
 </Container>
 ```

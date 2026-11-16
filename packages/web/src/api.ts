@@ -10,11 +10,14 @@ export interface ProjectMeta {
   updatedAt: string;
 }
 
-export interface Board {
-  id: string;
-  fqbn: string;
-  name: string;
-  flasher: "nano-every" | "teensy";
+import type { Board } from "@nextion-arduino/server/boards";
+import type { DisplayModel } from "@nextion-arduino/server/displays";
+import type { Wiring } from "@nextion-arduino/server/wiring";
+export type { Board, DisplayModel, Wiring };
+
+export interface ProjectSummary extends ProjectMeta {
+  lastBuild?: { n: number; ok: boolean; createdAt: string };
+  onDevice?: number;
 }
 
 export interface BuildPart {
@@ -34,6 +37,8 @@ export interface BuildRecord {
   sketch?: BuildPart;
   screen?: BuildPart;
   flashed?: { sketch?: string; screen?: string };
+  board?: string;
+  display?: string;
 }
 
 export interface ProjectDetail {
@@ -43,6 +48,9 @@ export interface ProjectDetail {
   hmi: string;
   hardware: string;
   sketch: string;
+  wiring: Wiring;
+  wiringSource: "file" | "hardware.md";
+  wiringError?: string;
   fonts: { index: number; height: number }[];
   busy: boolean;
 }
@@ -52,21 +60,25 @@ async function json<T>(r: Response): Promise<T> {
   return r.json();
 }
 
+const send = (url: string, method: string, body?: unknown) =>
+  fetch(url, { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+
 export const api = {
-  projects: () => fetch("/api/projects").then((r) => json<ProjectMeta[]>(r)),
+  projects: () => fetch("/api/projects").then((r) => json<ProjectSummary[]>(r)),
   project: (id: string) => fetch(`/api/projects/${id}`).then((r) => json<ProjectDetail>(r)),
   boards: () => fetch("/api/boards").then((r) => json<Board[]>(r)),
-  create: (title: string, board?: string) =>
-    fetch("/api/projects", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title, board }) }).then((r) =>
-      json<ProjectMeta>(r),
-    ),
-  setBoard: (id: string, board: string) =>
-    fetch(`/api/projects/${id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ board }) }).then((r) =>
-      json<ProjectMeta>(r),
-    ),
-  markFlashed: (id: string, n: number, parts: { sketch: boolean; screen: boolean }) =>
-    fetch(`/api/projects/${id}/builds/${n}/flashed`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(parts) }),
+  displays: () => fetch("/api/displays").then((r) => json<DisplayModel[]>(r)),
+  config: () => fetch("/api/config").then((r) => json<{ publicUrl: string }>(r)),
+  create: (title: string, board?: string, display?: string) => send("/api/projects", "POST", { title, board, display }).then((r) => json<ProjectMeta>(r)),
+  update: (id: string, patch: { title?: string; description?: string; board?: string; display?: string }) =>
+    send(`/api/projects/${id}`, "PATCH", patch).then((r) => json<ProjectMeta>(r)),
+  remove: (id: string) => send(`/api/projects/${id}`, "DELETE").then((r) => json<{ ok: boolean }>(r)),
+  duplicate: (id: string, title: string) => send(`/api/projects/${id}/duplicate`, "POST", { title }).then((r) => json<ProjectMeta>(r)),
+  newConversation: (id: string) => send(`/api/projects/${id}/conversation`, "POST").then((r) => json<{ ok: boolean }>(r)),
+  file: (id: string, path: string) => fetch(`/api/projects/${id}/file?path=${encodeURIComponent(path)}`).then((r) => (r.ok ? r.text() : Promise.reject(new Error(r.statusText)))),
+  markFlashed: (id: string, n: number, parts: { sketch: boolean; screen: boolean }) => send(`/api/projects/${id}/builds/${n}/flashed`, "POST", parts),
   buildFileUrl: (id: string, n: number, file: string) => `/api/projects/${id}/builds/${n}/${file}`,
+  uploadUrl: (id: string, path: string) => `/api/projects/${id}/upload/${path.replace(/^uploads\//, "")}`,
 };
 
 export function ago(iso: string | undefined): string {

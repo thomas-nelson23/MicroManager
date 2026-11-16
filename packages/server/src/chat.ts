@@ -187,7 +187,35 @@ function resultSummary(content: unknown): string {
 
 const running = new Map<string, AbortController>();
 
-export async function sendMessage(projectId: string, userText: string): Promise<void> {
+/** Forget the conversation so far: the next message starts a new Claude session. Files are untouched. */
+export async function newConversation(projectId: string): Promise<void> {
+  const meta = await readMeta(projectId);
+  delete meta.sessionId;
+  await writeMeta(meta);
+  await hubFor(projectId).reset();
+}
+
+const IMAGE_EXT: Record<string, string> = { "image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp", "image/gif": ".gif" };
+
+/** Save attached pictures under uploads/ and return their project-relative paths. */
+async function saveImages(projectId: string, images: { name: string; dataUrl: string }[] | undefined): Promise<string[]> {
+  const out: string[] = [];
+  for (const img of (images ?? []).slice(0, 4)) {
+    const m = /^data:(image\/[a-z]+);base64,(.+)$/s.exec(img.dataUrl);
+    const ext = m && IMAGE_EXT[m[1]!];
+    if (!m || !ext) continue;
+    const data = Buffer.from(m[2]!, "base64");
+    if (data.length > 8 * 1024 * 1024) continue;
+    const dir = path.join(projectDir(projectId), "uploads");
+    await fs.promises.mkdir(dir, { recursive: true });
+    const file = `${Date.now()}-${out.length}${ext}`;
+    await fs.promises.writeFile(path.join(dir, file), data);
+    out.push(`uploads/${file}`);
+  }
+  return out;
+}
+
+export async function sendMessage(projectId: string, typedText: string, attached?: { name: string; dataUrl: string }[]): Promise<void> {
   const hub = hubFor(projectId);
   if (hub.busy) {
     await hub.emit({ kind: "notice", id: randomUUID(), text: "Claude is still working on the last message." });
@@ -198,7 +226,9 @@ export async function sendMessage(projectId: string, userText: string): Promise<
   running.set(projectId, abort);
   const cwd = projectDir(projectId);
   const t0 = Date.now();
-  await hub.emit({ kind: "user", id: randomUUID(), text: userText, at: new Date().toISOString() });
+  const images = await saveImages(projectId, attached).catch(() => []);
+  const userText = images.length ? `${typedText}\n\n[Attached picture${images.length > 1 ? "s" : ""}: ${images.join(", ")}. Read ${images.length > 1 ? "them" : "it"} to see ${images.length > 1 ? "them" : "it"}.]`.trim() : typedText;
+  await hub.emit({ kind: "user", id: randomUUID(), text: typedText, at: new Date().toISOString(), ...(images.length ? { images } : {}) });
   try {
     const meta = await readMeta(projectId);
     const allowed = ["Read", "Write", "Edit", "MultiEdit", "Glob", "Grep", "TodoWrite", "mcp__bench__check_screen", "mcp__bench__build", "mcp__bench__flash", "mcp__bench__display", "mcp__bench__install_library"];

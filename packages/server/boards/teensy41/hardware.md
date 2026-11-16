@@ -2,12 +2,7 @@
 
 Board: Teensy 4.1. Display: Nextion on Serial1 (pins 0/1) at 9600 baud.
 
-| Pin | Goes to |
-|---|---|
-| 1 (TX1) | Display RX (yellow) |
-| 0 (RX1) | Display TX (blue) |
-| VIN | Display 5V (red) |
-| GND | Display GND (black) |
+The connections are in wiring.json. Notes that don't fit there go here.
 
 Teensy 4.1 pins are 3.3 V and not 5 V tolerant. The Nextion's TX is 3.3 V, so the serial wires connect
 directly; never feed a 5 V signal into a Teensy pin. VIN carries the USB 5 V when the Teensy runs from USB.
