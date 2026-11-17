@@ -33,10 +33,10 @@ is flashed through its HalfKay bootloader: the page reboots the running sketch i
 and the first time Chrome asks you to allow "Teensy HalfKay". A blank Teensy, or one whose sketch has
 crashed, needs its button pressed. Every build's sketch can also be downloaded as a .hex for PJRC's Teensy Loader.
 
-A Raspberry Pi Pico is flashed by copying the build's .uf2 onto its BOOTSEL drive (RPI-RP2): the page
+A Raspberry Pi Pico or Adafruit Feather RP2040 Prop-Maker is flashed by copying the build's .uf2 onto its BOOTSEL drive (RPI-RP2): the page
 reboots the running sketch into BOOTSEL (1200-baud touch), and the first time per visit you pick the
-RPI-RP2 drive in Chrome's folder picker and allow editing. A blank Pico, or one whose sketch has crashed,
-needs BOOTSEL held while plugging it in. The flash dialog also offers the .uf2 to drag onto the drive by
+RPI-RP2 drive in Chrome's folder picker and allow editing. A blank board, or one whose sketch has crashed,
+needs BOOT (BOOTSEL) held while plugging it in or pressing reset. The flash dialog also offers the .uf2 to drag onto the drive by
 hand. On Linux the drive has to be mounted (most desktops do that when it appears). On a plain-HTTP LAN address,
 enable `chrome://flags/#unsafely-treat-insecure-origin-as-secure` for that origin.
 

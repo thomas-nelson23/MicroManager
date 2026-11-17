@@ -83,7 +83,7 @@ export class Uf2Drive {
     const w = window as PickerWindow;
     if (!w.showDirectoryPicker) throw new Error("this browser can't write to a USB drive. Use Chrome or Edge on a computer, or download the .uf2");
     const dir = await w.showDirectoryPicker({ id: KEY, mode: "readwrite" });
-    if (!(await isBootDrive(dir))) throw new Error(`“${dir.name}” isn't the Pico's RPI-RP2 drive`);
+    if (!(await isBootDrive(dir))) throw new Error(`“${dir.name}” isn't the board's RPI-RP2 drive`);
     await idb((s) => s.put(dir, KEY), "readwrite");
     return new Uf2Drive(dir);
   }

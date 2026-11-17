@@ -8,6 +8,8 @@
 import { type SerialTransport, sleep } from "./transport.ts";
 
 export const RP2040_VID = 0x2e8a;
+/** USB vendors whose RP2040 boards run arduino-pico with USB serial: Raspberry Pi, Adafruit. */
+export const RP2040_VIDS = [RP2040_VID, 0x239a];
 /** USB serial of a running arduino-pico sketch on a Pico. */
 export const PICO_SERIAL_PID = 0x000a;
 /** The boot ROM in BOOTSEL mode (drive + PICOBOOT). */

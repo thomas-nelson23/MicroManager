@@ -506,11 +506,11 @@ function BootloaderPrompt() {
   if (prompt?.kind === "rp2040") {
     return (
       <div className="scrim">
-        <div className="dialog app-dialog" role="alertdialog" aria-modal="true" aria-label="Choose the Pico's drive">
-          <h2 className="h3">Choose the Pico's drive</h2>
+        <div className="dialog app-dialog" role="alertdialog" aria-modal="true" aria-label="Choose the RPI-RP2 drive">
+          <h2 className="h3">Choose the RPI-RP2 drive</h2>
           <div className="dialog-body">
-            <p>The Pico is in BOOTSEL mode and shows up as a USB drive called RPI-RP2. Chrome needs your OK before this page can copy the sketch onto it.</p>
-            <p>Click <b>Choose drive and flash</b>, pick RPI-RP2, then allow Chrome to edit it. If the drive isn't there, give it a moment, or hold BOOTSEL while plugging the Pico in.</p>
+            <p>The board is in BOOTSEL mode and shows up as a USB drive called RPI-RP2. Chrome needs your OK before this page can copy the sketch onto it.</p>
+            <p>Click <b>Choose drive and flash</b>, pick RPI-RP2, then allow Chrome to edit it. If the drive isn't there, give it a moment, or hold the BOOT (BOOTSEL) button while plugging the board in or pressing reset.</p>
             <p>Or <a href={prompt.fileUrl} download="sketch.uf2">download the .uf2</a>, drag it onto RPI-RP2 yourself, and click <b>I copied it</b>.</p>
           </div>
           <div className="actions end">
