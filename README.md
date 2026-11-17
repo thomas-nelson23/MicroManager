@@ -33,6 +33,18 @@ and the first time Chrome asks you to allow "Teensy HalfKay". A blank Teensy, or
 crashed, needs its button pressed. Every build's sketch can also be downloaded as a .hex for PJRC's Teensy Loader. On a plain-HTTP LAN address,
 enable `chrome://flags/#unsafely-treat-insecure-origin-as-secure` for that origin.
 
+**Teensy on a Linux computer:** install PJRC's udev rules once, or Chrome can't open the Teensy
+(its USB and bootloader devices are root-only by default, and ModemManager may grab its serial port):
+
+```bash
+curl -fsSLO https://www.pjrc.com/teensy/00-teensy.rules
+sudo cp 00-teensy.rules /etc/udev/rules.d/ && sudo udevadm control --reload-rules && sudo udevadm trigger
+```
+
+Then replug the Teensy. Your user also needs serial access (`dialout`, or `uucp` on Arch-based systems).
+A new Teensy runs a factory blink sketch with no serial port, so the port picker won't list it: flash it
+once with the button method above (or Teensy Loader), and from then on the app's sketches keep USB serial.
+
 Each project keeps its wiring in `wiring.json` (board pin, part, part pin, wire colour); the Wiring tab draws it on
 the board's pinout and checks it against the board and the sketch. Boards and their pins are in
 `packages/server/src/boards.ts`, displays in `packages/server/src/displays.ts`.
