@@ -66,7 +66,7 @@ function FlashCard({ ev, project }: { ev: FlashEv; project: ProjectState }) {
             <button className="btn md quiet" type="button" onClick={() => project.flashResult(ev.id, "skipped", "skipped by the person")}>Skip</button>
             <button className="btn md primary" type="button" onClick={flash}>
               <Icon name="zap" />
-              {device.portLabel || device.board === "teensy" ? `Flash ${parts}` : "Choose port and flash"}
+              {device.portLabel || device.board !== "nano-every" ? `Flash ${parts}` : "Choose port and flash"}
             </button>
           </>
         )}

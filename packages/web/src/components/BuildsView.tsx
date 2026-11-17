@@ -79,7 +79,7 @@ export function BuildsView({ detail, flasher }: { detail: ProjectDetail; flasher
                               {b.sketch?.ok && <button className="item" type="button" role="menuitem" onClick={() => go(b, "sketch")}>Sketch only</button>}
                               {b.screen?.ok && <button className="item" type="button" role="menuitem" onClick={() => go(b, "screen")}>Screen only · about 95 s</button>}
                               <span className="sep" />
-                              {b.sketch?.ok && b.sketch.file && <a className="item" role="menuitem" href={api.buildFileUrl(detail.meta.id, b.n, b.sketch.file)} download={`${detail.meta.id}-${b.n}.hex`}><Icon name="download" />Download sketch (.hex)</a>}
+                              {b.sketch?.ok && b.sketch.file && <a className="item" role="menuitem" href={api.buildFileUrl(detail.meta.id, b.n, b.sketch.file)} download={`${detail.meta.id}-${b.n}.${b.sketch.file.split(".").pop()}`}><Icon name="download" />Download sketch (.{b.sketch.file.split(".").pop()})</a>}
                               {b.screen?.ok && b.screen.file && <a className="item" role="menuitem" href={api.buildFileUrl(detail.meta.id, b.n, b.screen.file)} download={`${detail.meta.id}-${b.n}.tft`}><Icon name="download" />Download screen (.tft)</a>}
                             </span>
                           )}

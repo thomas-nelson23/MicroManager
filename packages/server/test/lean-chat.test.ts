@@ -28,7 +28,7 @@ describe("component_info", () => {
 describe("guide", () => {
   it("splits board notes off the shared part", () => {
     const { guide, boards } = splitGuide(guideMd);
-    expect([...boards.keys()]).toEqual(["arduino:megaavr:nona4809", "teensy:avr:teensy41"]);
+    expect([...boards.keys()]).toEqual(["arduino:megaavr:nona4809", "teensy:avr:teensy41", "rp2040:rp2040:rpipico"]);
     expect(boards.get("teensy:avr:teensy41")).toMatch(/not\s+5 V tolerant/);
     expect(guide).not.toContain("### board:");
     expect(guide).not.toContain("<!--");
