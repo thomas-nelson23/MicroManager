@@ -8,7 +8,9 @@ import { WebSocketServer } from "ws";
 import { build } from "./builds.ts";
 import { interrupt, newConversation, sendMessage } from "./chat.ts";
 import { config } from "./config.ts";
+import { applyAttrChange, type AttrChange, HmiEditError } from "./hmi-edit.ts";
 import { hubFor } from "./hub.ts";
+import { projectFonts } from "./layout-lint.ts";
 import { BOARDS, boardById } from "./boards.ts";
 import { DISPLAYS, displayByModel } from "./displays.ts";
 import {
@@ -53,15 +55,8 @@ app.get("/api/projects/:id", async (c) => {
   const [{ sessionId: _session, sessionAt: _at, sessionContext: _ctx, ...meta }, files, builds, wiring] = await Promise.all([readMeta(id), listFiles(id), listBuilds(id), readWiring(id)]);
   const read = (rel: string) => fs.readFile(safePath(id, rel), "utf8").catch(() => "");
   const [hmi, hardware, sketch] = await Promise.all([read("nextion/hmi.txt"), read("hardware.md"), read("sketch/sketch.ino")]);
-  // font index -> pixel height (byte 7 of a .zi header)
-  const fonts: { index: number; height: number }[] = [];
-  for (const f of files) {
-    const m = /^nextion\/font\/(\d+)\.zi$/.exec(f.path);
-    if (!m) continue;
-    const head = await fs.readFile(safePath(id, f.path)).then((b) => b.subarray(0, 8), () => null);
-    if (head && head.length === 8) fonts.push({ index: Number(m[1]), height: head[7]! });
-  }
-  return c.json({ meta, files, builds, hmi, hardware, sketch, wiring: wiring.wiring, wiringSource: wiring.source, wiringError: wiring.error, fonts: fonts.sort((a, b) => a.index - b.index), busy: hubFor(id).busy });
+  const fonts = await projectFonts(id);
+  return c.json({ meta, files, builds, hmi, hardware, sketch, wiring: wiring.wiring, wiringSource: wiring.source, wiringError: wiring.error, fonts, busy: hubFor(id).busy });
 });
 
 app.patch("/api/projects/:id", async (c) => {
@@ -144,6 +139,27 @@ app.post("/api/projects/:id/builds/:n/flashed", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   await markFlashed(id, Number(n), body.sketch === true, body.screen === true);
   hubFor(id).broadcast({ type: "project_changed" });
+  return c.json({ ok: true });
+});
+
+app.post("/api/projects/:id/screen/attrs", async (c) => {
+  const id = c.req.param("id");
+  const hub = hubFor(id);
+  if (hub.busy) return c.json({ error: "Claude is working on this project; save again when it's done" }, 409);
+  const body = (await c.req.json().catch(() => ({}))) as Partial<AttrChange>;
+  if (typeof body.page !== "string" || !body.attrs || typeof body.attrs !== "object") return c.json({ error: "page and attrs are required" }, 400);
+  const change: AttrChange = { page: body.page, name: typeof body.name === "string" ? body.name : undefined, attrs: body.attrs };
+  const file = safePath(id, "nextion/hmi.txt");
+  let out: string;
+  try {
+    out = applyAttrChange(await fs.readFile(file, "utf8"), change);
+  } catch (e) {
+    if (e instanceof HmiEditError || e instanceof SyntaxError) return c.json({ error: e.message }, 400);
+    throw e;
+  }
+  await fs.writeFile(file, out);
+  hub.screenEdits.add(`${change.page}${change.name ? `.${change.name}` : ""}: ${Object.keys(change.attrs).join(", ")}`);
+  hub.broadcast({ type: "project_changed" });
   return c.json({ ok: true });
 });
 

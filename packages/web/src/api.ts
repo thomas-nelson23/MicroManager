@@ -81,6 +81,9 @@ export const api = {
   markFlashed: (id: string, n: number, parts: { sketch: boolean; screen: boolean }) => send(`/api/projects/${id}/builds/${n}/flashed`, "POST", parts),
   buildFileUrl: (id: string, n: number, file: string) => `/api/projects/${id}/builds/${n}/${file}`,
   uploadUrl: (id: string, path: string) => `/api/projects/${id}/upload/${path.replace(/^uploads\//, "")}`,
+  /** Save inspector edits of one page (no name) or component into hmi.txt. */
+  setScreenAttrs: (id: string, change: { page: string; name?: string; attrs: Record<string, string | null> }) =>
+    send(`/api/projects/${id}/screen/attrs`, "POST", change).then((r) => json<{ ok: true }>(r)),
 };
 
 export function ago(iso: string | undefined): string {

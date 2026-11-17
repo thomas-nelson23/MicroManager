@@ -30,6 +30,7 @@
     "./boards": "./src/boards.ts",
     "./displays": "./src/displays.ts",
     "./wiring": "./src/wiring.ts",
-    "./components.json": "./nextion/components.json"
+    "./components.json": "./nextion/components.json",
+    "./hmi-model": "./src/hmi-model.ts"
   }
 }

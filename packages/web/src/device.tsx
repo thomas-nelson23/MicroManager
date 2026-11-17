@@ -20,6 +20,8 @@ import {
   teensyEnterBootloader,
   teensyRestart,
   type DisplayInfo,
+  type Nextion,
+  type NexReply,
   type SerialTransport,
 } from "@nextion-arduino/flasher";
 import { WebSerialTransport } from "@nextion-arduino/flasher/web";
@@ -51,6 +53,16 @@ export interface CommandResult {
   reply: unknown[];
 }
 
+/** One line of the device console. */
+export interface LogEntry {
+  n: number;
+  at: number;
+  /** out: we sent it; in: the display or sketch sent it; note: something about the connection. */
+  dir: "out" | "in" | "note";
+  text?: string;
+  reply?: NexReply;
+}
+
 interface Device {
   supported: boolean;
   /** The page was opened over plain HTTP, where browsers don't offer USB access at all. */
@@ -73,6 +85,11 @@ interface Device {
   cancelBootloader(): void;
   flash(job: FlashJob): Promise<{ status: "done" | "failed"; message: string }>;
   run(commands: string[], listenSeconds?: number): Promise<{ results: CommandResult[]; events: unknown[] }>;
+  /** Keep the port open between operations and show everything the device sends in the console. */
+  live: boolean;
+  setLive(on: boolean): void;
+  log: LogEntry[];
+  clearLog(): void;
 }
 
 const Ctx = createContext<Device | null>(null);
@@ -147,6 +164,18 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
   const rebooting = useRef(false);
   const promptRef = useRef<((hk: WebHidHalfKay | null) => void) | null>(null);
   const drivePromptRef = useRef<((d: DriveChoice) => void) | null>(null);
+  /** The open, handshaken display connection, reused while the port stays open (live mode). */
+  const session = useRef<{ nex: Nextion; info: DisplayInfo } | null>(null);
+  const [live, setLiveState] = useState(false);
+  const liveRef = useRef(false);
+  const [log, setLog] = useState<LogEntry[]>([]);
+  const logN = useRef(0);
+  const addLog = useCallback((entries: Omit<LogEntry, "n" | "at">[]) => {
+    if (!entries.length) return;
+    const at = Date.now();
+    setLog((l) => [...l, ...entries.map((e) => ({ ...e, n: ++logN.current, at }))].slice(-400));
+  }, []);
+  const pending = useRef(0);
 
   useEffect(() => {
     if (!supported) return;
@@ -174,14 +203,23 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
   }, [supported]);
 
   /** Run one device operation at a time; the serial port is always left closed afterwards. */
-  const exclusive = useCallback(<T,>(fn: (t: WebSerialTransport | null) => Promise<T>, needPort = true): Promise<T> => {
+  const exclusive = useCallback(<T,>(fn: (t: WebSerialTransport | null) => Promise<T>, needPort = true, mayStayOpen = true): Promise<T> => {
+    pending.current++;
     const run = async () => {
       const t = tRef.current;
       if (!t && needPort) throw new Error("No device connected. Choose the board's port first.");
+      let ok = false;
       try {
-        return await fn(t);
+        const r = await fn(t);
+        ok = true;
+        return r;
       } finally {
-        await t?.close().catch(() => {});
+        pending.current--;
+        // In live mode the port stays open after a display operation that went well.
+        if (!(liveRef.current && mayStayOpen && ok && t?.isOpen && session.current)) {
+          session.current = null;
+          await t?.close().catch(() => {});
+        }
         rebooting.current = false;
         setBusy(null);
       }
@@ -220,10 +258,26 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
     [rebindPort],
   );
 
+  /** The display connection: reused when the port is still open, otherwise opened with a handshake. */
+  const connect = useCallback(
+    async (t: WebSerialTransport) => {
+      if (session.current && t.isOpen) return session.current;
+      session.current = null;
+      const s = await openDisplay(t, 115200, restartFor(boardRef.current));
+      setDisplay(s.info);
+      await s.nex.command("bkcmd=3");
+      session.current = s;
+      addLog([{ dir: "note", text: `connected to ${s.info.model}` }]);
+      return s;
+    },
+    [addLog, restartFor],
+  );
+
   const choosePort = useCallback(async () => {
     if (!supported) return false;
     try {
       const t = await WebSerialTransport.request(SERIAL_FILTERS);
+      session.current = null;
       if (tRef.current?.isOpen) await tRef.current.close();
       setTransport(t);
       setDisplay(null);
@@ -327,6 +381,8 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
   const flash = useCallback(
     (job: FlashJob) =>
       exclusive(async (t0) => {
+        session.current = null; // flashing reopens the port its own way
+        if (t0?.isOpen) await t0.close();
         let t = t0;
         const kind = boardRef.current;
         try {
@@ -398,30 +454,97 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
         } catch (e) {
           return { status: "failed" as const, message: e instanceof Error ? e.message : String(e) };
         }
-      }, boardRef.current === "nano-every" || !!job.screenUrl),
+      }, boardRef.current === "nano-every" || !!job.screenUrl, false),
     [exclusive, halfKay, flashPico, rebindPort, restartFor],
+  );
+
+  const listen = useCallback(
+    async (nex: Nextion, t: WebSerialTransport, seconds: number) => {
+      if (seconds <= 0) return [];
+      setBusy({ label: `Listening for ${seconds} s` });
+      t.rx.clear();
+      const replies = (await nex.collect(seconds * 1000)).map(decodeReply);
+      addLog(replies.map((reply) => ({ dir: "in" as const, reply })));
+      return replies;
+    },
+    [addLog],
   );
 
   const run = useCallback(
     (commands: string[], listenSeconds = 0) =>
       exclusive(async (t) => {
         setBusy({ label: "Talking to the display" });
-        const { nex, info } = await openDisplay(t!, 115200, restartFor(boardRef.current));
-        setDisplay(info);
-        await nex.command("bkcmd=3");
+        const { nex } = await connect(t!);
         const results: CommandResult[] = [];
-        for (const cmd of commands) results.push({ cmd, reply: await nex.command(cmd) });
-        let events: unknown[] = [];
-        if (listenSeconds > 0) {
-          setBusy({ label: `Listening for ${listenSeconds} s` });
-          t!.rx.clear();
-          const msgs = await nex.collect(listenSeconds * 1000);
-          events = msgs.map(decodeReply);
+        for (const cmd of commands) {
+          addLog([{ dir: "out", text: cmd }]);
+          if (cmd.startsWith("@")) {
+            // a request for the sketch (NexPass.onRequest), not for the display
+            try {
+              const r = await nex.ask(cmd.slice(1));
+              const reply = [...r.lines.map((l) => ({ sketch: l })), ...r.other];
+              results.push({ cmd, reply });
+              addLog(reply.map((x) => ({ dir: "in" as const, reply: x })));
+            } catch (e) {
+              const error = e instanceof Error ? e.message : String(e);
+              results.push({ cmd, reply: [{ error }] });
+              addLog([{ dir: "note", text: error }]);
+            }
+            continue;
+          }
+          const reply = await nex.command(cmd);
+          results.push({ cmd, reply });
+          addLog(reply.map((r) => ({ dir: "in" as const, reply: r })));
         }
+        const events = await listen(nex, t!, listenSeconds);
         return { results, events };
       }),
-    [exclusive, restartFor],
+    [exclusive, connect, listen, addLog],
   );
+
+  // Live mode: while nothing else is queued, read whatever the device sends and log it.
+  const pumping = useRef(false);
+  const pump = useCallback(() => {
+    if (pumping.current || !liveRef.current || pending.current > 0 || !tRef.current) return;
+    pumping.current = true;
+    exclusive(async (t) => {
+      const { nex } = await connect(t!);
+      const msgs = await nex.collect(250);
+      addLog(msgs.map((m) => ({ dir: "in" as const, reply: decodeReply(m) })));
+    }).then(
+      () => {
+        pumping.current = false;
+        setTimeout(pump, 0);
+      },
+      (e: unknown) => {
+        pumping.current = false;
+        liveRef.current = false;
+        setLiveState(false);
+        addLog([{ dir: "note", text: `live connection stopped: ${e instanceof Error ? e.message : String(e)}` }]);
+      },
+    );
+  }, [exclusive, connect, addLog]);
+
+  const setLive = useCallback(
+    (on: boolean) => {
+      liveRef.current = on;
+      setLiveState(on);
+      if (on) pump();
+      else
+        // close the port once whatever is running finishes
+        exclusive(async () => {}, false, false).catch(() => {});
+    },
+    [pump, exclusive],
+  );
+
+  // Pick the pump back up after other operations (they hold the queue while they run).
+  useEffect(() => {
+    if (!live) return;
+    const i = setInterval(pump, 1000);
+    return () => clearInterval(i);
+  }, [live, pump]);
+
+  const clearLog = useCallback(() => setLog([]), []);
 
   const setBoard = useCallback((kind: BoardKind) => setBoardState(kind), []);
 
@@ -443,8 +566,12 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
       cancelBootloader,
       flash,
       run,
+      live,
+      setLive,
+      log,
+      clearLog,
     }),
-    [supported, insecure, transport, display, busy, board, bootloaderPrompt, setBoard, choosePort, ensurePort, allowBootloader, copiedByHand, cancelBootloader, flash, run],
+    [supported, insecure, transport, display, busy, board, bootloaderPrompt, setBoard, choosePort, ensurePort, allowBootloader, copiedByHand, cancelBootloader, flash, run, live, setLive, log, clearLog],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

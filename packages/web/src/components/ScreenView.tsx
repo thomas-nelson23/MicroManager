@@ -1,28 +1,42 @@
-/** The screen tab: a preview of each page beside the list of its components. Clicking one puts its name in the message box. */
-import { useEffect, useMemo, useRef, useState } from "react";
+/**
+ * The screen tab: a preview of each page beside the list of its components. Clicking one puts its name
+ * in the message box. Edit mode (ScreenWorkbench) moves, resizes and restyles components, live on the
+ * display if wanted.
+ */
+import { useEffect, useMemo, useState } from "react";
 import type { ProjectDetail } from "../api.ts";
 import { parseHmi } from "../hmi.ts";
 import { NexPreview } from "./NexPreview.tsx";
+import { ScreenWorkbench } from "./ScreenWorkbench.tsx";
 
 /** The preview never grows past this multiple of the display's real pixel size. */
 const MAX_SCALE = 1.5;
 
-export function ScreenView({ detail, onInsert }: { detail: ProjectDetail; onInsert: (name: string) => void }) {
+export function ScreenView({ detail, onInsert, onShipScreen }: { detail: ProjectDetail; onInsert: (name: string) => void; onShipScreen: () => Promise<{ ok: boolean; text: string }> }) {
   const hmi = useMemo(() => parseHmi(detail.hmi), [detail.hmi]);
   const [pageIdx, setPageIdx] = useState(0);
   const [hover, setHover] = useState<string | null>(null);
-  const box = useRef<HTMLDivElement>(null);
+  const [editing, setEditing] = useState(false);
+  const [box, setBox] = useState<HTMLDivElement | null>(null);
   const [avail, setAvail] = useState(0);
   useEffect(() => {
-    const el = box.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => setAvail(el.clientWidth));
-    ro.observe(el);
+    if (!box) return;
+    const ro = new ResizeObserver(() => setAvail(box.clientWidth));
+    ro.observe(box);
     return () => ro.disconnect();
-  }, []);
+  }, [box]);
   const page = hmi.pages[Math.min(pageIdx, hmi.pages.length - 1)];
   const d = detail.meta.display;
   const width = Math.floor(Math.min(avail, d.width * MAX_SCALE));
+  const modeSwitch = (
+    <div className="seg md" role="group" aria-label="Mode">
+      <button type="button" className={editing ? "" : "checked"} aria-pressed={!editing} onClick={() => setEditing(false)}>View</button>
+      <button type="button" className={editing ? "checked" : ""} aria-pressed={editing} onClick={() => setEditing(true)}>Edit</button>
+    </div>
+  );
+  if (editing) {
+    return <ScreenWorkbench detail={detail} width={width} pageIdx={pageIdx} setPageIdx={setPageIdx} modeSwitch={modeSwitch} onInsert={onInsert} onShipScreen={onShipScreen} stageRef={setBox} />;
+  }
 
   return (
     <div className="screen-view">
@@ -39,9 +53,12 @@ export function ScreenView({ detail, onInsert }: { detail: ProjectDetail; onInse
           ) : (
             <span className="eyebrow">Page {page?.name ?? ""}</span>
           )}
-          <span className="note">{d.width} × {d.height} · {d.model} · approximate preview</span>
+          <span className="workbench-tools">
+            <span className="note">{d.width} × {d.height} · {d.model} · approximate preview</span>
+            {modeSwitch}
+          </span>
         </div>
-        <div ref={box} className="screen-stage">
+        <div ref={setBox} className="screen-stage">
           {hmi.error ? (
             <div className="msg bad"><span className="led" /><div className="body">{hmi.error}</div></div>
           ) : page && width > 0 ? (
