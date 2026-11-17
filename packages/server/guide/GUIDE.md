@@ -46,7 +46,7 @@ uploads/            pictures the person attached; their message names them: Read
 ## Wiring: wiring.json
 
 - One entry per wire, power and ground too. `pin` is as printed on the board (Nano Every `D2`..`D13`,
-  `A0`..`A7`, `TX1`, `RX1`, `5V`, `3V3`, `GND`, `VIN`; Teensy 4.1 `0`..`41`, `VIN`, `3V3`, `GND`; Pico `GP0`..`GP28`, `VBUS`, `VSYS`, `3V3`, `GND`). `part` is
+  `A0`..`A7`, `TX1`, `RX1`, `5V`, `3V3`, `GND`, `VIN`; Teensy 4.1 `0`..`41`, `VIN`, `3V3`, `GND`; Pico `GP0`..`GP28`, `VBUS`, `VSYS`, `3V3`, `GND`; Feather silkscreen labels `TX`, `RX`, `SCL`, `D5`, `A0`, `USB`, `3V3`, `GND`). `part` is
   a short name, the same for all its wires; `partPin` the pin on the part. `color` optional. Add
   `"signal": "5V"` where a part drives 5 V into a board pin.
 - Update wiring.json together with the sketch, and say what else a part needs (resistor, library, supply).
@@ -134,3 +134,11 @@ Raspberry Pi Pico (arduino-pico core): RP2040, 2 cores at 133 MHz, 2 MB flash, 2
 are not 5 V tolerant**: never wire a 5 V output straight to a pin; say so, and put a level shifter or divider
 in wiring.json and hardware.md. Pins are `GPn` (write `n` in code). Serial1 = GP0 TX / GP1 RX, Serial2 = GP8 TX /
 GP9 RX, Wire = GP4/GP5, SPI = GP16-19; analog only GP26-28 (A0-A2). Power the Nextion from VBUS.
+
+### board: rp2040:rp2040:adafruit_feather_prop_maker
+Adafruit Feather RP2040 Prop-Maker (arduino-pico core): RP2040, 8 MB flash, 264 KB RAM. **3.3 V logic, not 5 V
+tolerant** (level shifter or divider for 5 V outputs, in wiring.json and hardware.md). wiring.json uses the silkscreen
+labels; code uses GPIO numbers: TX 0 / RX 1 (Serial1), SDA 2 / SCL 3 (Wire), SCK 14 / MO 15 / MI 8, A0-A3 26-29,
+D4 4 (on-board NeoPixel), D5 5, D6 6, D9-D13 9-13, D24/D25. Built in: LIS3DH on Wire (int 22), I2S amp 16-18,
+terminal button 19, servo 20, NeoPixel strip 21. **Set `PIN_EXTERNAL_POWER` (23) HIGH** before using the terminal
+5 V, servo or amp. Power the Nextion from USB.

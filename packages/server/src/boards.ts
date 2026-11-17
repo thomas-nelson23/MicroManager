@@ -147,6 +147,43 @@ const PICO_PINS: BoardPin[] = [
   gp(22, "R"), gnd("R"), gp(21, "R"), gp(20, "R"), gp(19, "R"), gp(18, "R"), gnd("R"), gp(17, "R"), gp(16, "R"),
 ];
 
+// Adafruit Feather RP2040 Prop-Maker. Standard Feather header (USB at the top: the 16-pin side on the
+// left, the 12-pin side on the right); names are the silkscreen labels, aliases the GPIO numbers that
+// code uses. GPIO16-23 drive the Prop-Maker hardware (I2S amp, terminal block, servo header, LIS3DH).
+function fp(label: string, gpio: number, side: "L" | "R", caps: PinCap[], role?: string, more: string[] = []): BoardPin {
+  return io(label, side, ["pwm", ...caps], { aliases: [String(gpio), `GP${gpio}`, ...more], ...(role ? { role } : {}) });
+}
+const PROP_MAKER_PINS: BoardPin[] = [
+  fixed("RST", "L", "other", ["RESET", "RUN"]),
+  fixed("3V3", "L", "power", ["3V", "3.3V"]),
+  fixed("NC", "L", "other", ["AREF"]),
+  fixed("GND", "L", "gnd"),
+  fp("A0", 26, "L", ["analog"]),
+  fp("A1", 27, "L", ["analog"]),
+  fp("A2", 28, "L", ["analog"]),
+  fp("A3", 29, "L", ["analog"]),
+  fp("D24", 24, "L", []),
+  fp("D25", 25, "L", []),
+  fp("SCK", 14, "L", ["spi"], "SCK"),
+  fp("MO", 15, "L", ["spi"], "MOSI", ["MOSI"]),
+  fp("MI", 8, "L", ["spi"], "MISO", ["MISO"]),
+  fp("RX", 1, "L", ["serial"], "Serial1 RX", ["RX1"]),
+  fp("TX", 0, "L", ["serial"], "Serial1 TX", ["TX1"]),
+  fp("D4", 4, "L", [], "NeoPixel"),
+  fixed("BAT", "R", "power", ["VBAT"]),
+  fixed("EN", "R", "other"),
+  fixed("USB", "R", "power", ["5V", "VBUS"]),
+  fp("D13", 13, "R", [], "LED", ["LED_BUILTIN"]),
+  fp("D12", 12, "R", []),
+  fp("D11", 11, "R", []),
+  fp("D10", 10, "R", []),
+  fp("D9", 9, "R", []),
+  fp("D6", 6, "R", []),
+  fp("D5", 5, "R", []),
+  fp("SCL", 3, "R", ["i2c"], "SCL"),
+  fp("SDA", 2, "R", ["i2c"], "SDA"),
+];
+
 export const BOARDS: Board[] = [
   {
     id: "nano-every",
@@ -180,6 +217,17 @@ export const BOARDS: Board[] = [
     flashKb: 2048,
     usb: [{ vendorId: 0x2e8a }],
     pins: PICO_PINS,
+  },
+  {
+    id: "feather-rp2040-prop-maker",
+    fqbn: "rp2040:rp2040:adafruit_feather_prop_maker",
+    name: "Adafruit Feather RP2040 Prop-Maker",
+    flasher: "rp2040",
+    volts: 3.3,
+    fiveVoltTolerant: false,
+    flashKb: 8192,
+    usb: [{ vendorId: 0x239a, productId: 0x8131 }, { vendorId: 0x239a, productId: 0xc131 }],
+    pins: PROP_MAKER_PINS,
   },
 ];
 
