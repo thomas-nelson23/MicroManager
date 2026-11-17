@@ -6,6 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
+import { lintLayout, projectFonts } from "./layout-lint.ts";
 import { build } from "./builds.ts";
 import { componentInfo } from "./components.ts";
 import { config } from "./config.ts";
@@ -57,6 +58,8 @@ function buildSummary(b: Awaited<ReturnType<typeof build>>): string {
 function fmtReply(r: unknown): string {
   if (!r || typeof r !== "object") return JSON.stringify(r);
   const o = r as Record<string, unknown>;
+  if ("sketch" in o) return `sketch: ${o.sketch}`;
+  if ("error" in o) return `error: ${o.error}`;
   if ("string" in o) return JSON.stringify(o.string);
   if ("number" in o) return String(o.number);
   if ("touch" in o) {
@@ -96,7 +99,11 @@ function benchServer(projectId: string, hub: ProjectHub) {
       p.on("close", (code) => resolve({ code: code ?? 1, out: o }));
     });
     fs.rmSync(tmp, { recursive: true, force: true });
-    return { ok: out.code === 0, out: out.out.trim() || "OK" };
+    if (out.code !== 0) return { ok: false, out: out.out.trim() };
+    const hmi = await fs.promises.readFile(path.join(dir, "nextion", "hmi.txt"), "utf8").catch(() => "");
+    const warn = lintLayout(hmi, meta.display.width, meta.display.height, await projectFonts(projectId));
+    const msg = [out.out.trim(), ...(warn.length ? ["layout warnings (estimates):", ...warn] : [])].filter((l) => l && l !== "OK").join("\n");
+    return { ok: true, out: msg || "OK" };
   };
 
   const flashBuild = async (n: number | undefined, parts: "both" | "sketch" | "screen"): Promise<{ ok: boolean; out: string }> => {
@@ -238,7 +245,7 @@ function benchServer(projectId: string, hub: ProjectHub) {
       ),
       tool(
         "display",
-        "Send Nextion instructions to the live display through the person's browser and the running sketch, and get the decoded replies. Examples: 'get t0.txt', 'get dp', 'click b0,1', 'page 1'. Changes are temporary.",
+        "Send Nextion instructions to the live display through the person's browser and the running sketch, and get the decoded replies. Examples: 'get t0.txt', 'get dp', 'click b0,1', 'page 1'. Changes are temporary. A line starting with '@' goes to the sketch's NexPass.onRequest handler instead (see device.md) and returns its reply lines.",
         {
           commands: z.array(z.string()).min(1).max(20),
           listen_seconds: z.number().min(0).max(30).optional().describe("Afterwards, collect events (e.g. touches) for this long"),
@@ -392,6 +399,10 @@ export async function sendMessage(projectId: string, typedText: string, attached
     if (config.allowBash) tools.push("Bash");
     const allowed = [...tools, "mcp__bench__ship", "mcp__bench__wire", "mcp__bench__check_screen", "mcp__bench__component_info", "mcp__bench__flash", "mcp__bench__display", "mcp__bench__install_library"];
     const boardNotes = BOARD_NOTES.get(meta.board.fqbn) ?? "";
+    if (hub.screenEdits.size) {
+      userText = `(Saved by the person in the screen editor since your last turn, already in nextion/hmi.txt: ${[...hub.screenEdits].join("; ")}. Keep those values unless asked.)\n\n${userText}`;
+      hub.screenEdits.clear();
+    }
     const q = query({
       prompt: userText,
       options: {

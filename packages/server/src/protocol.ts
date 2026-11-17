@@ -35,7 +35,13 @@ export type ServerMessage =
   | { type: "update"; id: string; patch: Partial<ChatEvent> }
   | { type: "busy"; busy: boolean }
   | { type: "project_changed" }
-  | { type: "device_request"; id: string; commands: string[]; listenSeconds?: number };
+  | {
+      type: "device_request";
+      id: string;
+      /** Nextion instructions for the display; lines starting with "@" go to the sketch (NexPass.onRequest). */
+      commands: string[];
+      listenSeconds?: number;
+    };
 
 export type ClientMessage =
   | { type: "send"; text: string; /** Attached pictures as data URLs. */ images?: { name: string; dataUrl: string }[]; /** Use the stronger model for this message. */ strong?: boolean }

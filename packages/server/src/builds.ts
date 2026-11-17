@@ -38,8 +38,22 @@ function run(cmd: string, args: string[], opts: { cwd?: string; env?: NodeJS.Pro
 
 const tail = (s: string, n = 2500) => (s.length > n ? "…" + s.slice(-n) : s).trim();
 
+/**
+ * NexPass.h is the app's library, not the project's code: every sketch build uses the current copy, so
+ * older projects pick up fixes and new features (like the request channel) when they are rebuilt.
+ */
+async function refreshNexPass(id: string): Promise<void> {
+  const dest = path.join(projectDir(id), "sketch", "NexPass.h");
+  const [cur, latest] = await Promise.all([
+    fs.readFile(dest, "utf8").catch(() => null),
+    fs.readFile(path.join(config.serverRoot, "template", "sketch", "NexPass.h"), "utf8"),
+  ]);
+  if (cur !== null && cur !== latest) await fs.writeFile(dest, latest);
+}
+
 export async function buildSketch(id: string, outDir: string): Promise<BuildPart> {
   const meta = await readMeta(id);
+  await refreshNexPass(id);
   const t0 = Date.now();
   const r = await run(config.arduinoCli, [
     "compile",

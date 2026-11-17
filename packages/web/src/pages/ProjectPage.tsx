@@ -8,6 +8,7 @@ import { BuildsView } from "../components/BuildsView.tsx";
 import { ChatPanel } from "../components/ChatPanel.tsx";
 import { CodeView } from "../components/CodeView.tsx";
 import { type Ask, useDialog } from "../components/Dialog.tsx";
+import { DeviceConsole } from "../components/DeviceConsole.tsx";
 import { Icon } from "../components/Icon.tsx";
 import { ScreenView } from "../components/ScreenView.tsx";
 import { WiringView } from "../components/WiringView.tsx";
@@ -16,12 +17,13 @@ import { buildOk, type Flasher, onDevice, staleReason, useFlasher } from "../fla
 import { useFiles } from "../useFiles.ts";
 import { type ProjectState, useProject } from "../useProject.ts";
 
-type Tab = "chat" | "screen" | "wiring" | "code" | "builds";
+type Tab = "chat" | "screen" | "wiring" | "code" | "builds" | "device";
 const TABS: { id: Tab; label: string }[] = [
   { id: "screen", label: "Screen" },
   { id: "wiring", label: "Wiring" },
   { id: "code", label: "Code" },
   { id: "builds", label: "Builds" },
+  { id: "device", label: "Device" },
 ];
 const isTab = (s: string): s is Tab => s === "chat" || TABS.some((t) => t.id === s);
 
@@ -120,8 +122,10 @@ export function ProjectPage({ id, navigate }: { id: string; navigate: (to: strin
       wiring: JSON.stringify(detail?.wiring ?? null),
       code: [...files.contents].filter(([p]) => p !== "nextion/hmi.txt" && p !== "wiring.json").map(([p, t]) => `${p}:${t.length}:${t.slice(0, 2000)}`).join("|"),
       builds: (detail?.builds ?? []).map((b) => `${b.n}${b.flashed?.sketch ?? ""}${b.flashed?.screen ?? ""}`).join(","),
+      // messages the sketch sent on its own
+      device: String(device.log.filter((e) => e.reply && "sketch" in e.reply).length),
     }),
-    [project.events.length, detail, files.contents],
+    [project.events.length, detail, files.contents, device.log],
   );
   const seen = useRef<Partial<Record<Tab, string>>>({});
   const ready = !!detail && files.contents.size > 0;
@@ -189,7 +193,20 @@ export function ProjectPage({ id, navigate }: { id: string; navigate: (to: strin
               </div>
               <div className={`bench-pane pane-${shown}`} role="tabpanel">
                 {shown === "chat" && chat}
-                {shown === "screen" && <ScreenView detail={detail} onInsert={(name) => toChat(name, "append")} />}
+                {shown === "screen" && (
+                  <ScreenView
+                    detail={detail}
+                    onInsert={(name) => toChat(name, "append")}
+                    onShipScreen={async () => {
+                      // built in the container and flashed from the browser: no Claude turn
+                      const b = await api.rebuild(id, "screen");
+                      project.reload();
+                      if (!b.screen?.ok) return { ok: false, text: `Screen build #${b.n} failed: ${b.screen?.error ?? "unknown error"}` };
+                      await flasher.flash(b, "screen");
+                      return { ok: true, text: `Built screen #${b.n}. The flash result shows in the status bar.` };
+                    }}
+                  />
+                )}
                 {shown === "wiring" && (
                   <WiringPane
                     detail={detail}
@@ -202,6 +219,7 @@ export function ProjectPage({ id, navigate }: { id: string; navigate: (to: strin
                 )}
                 {shown === "code" && <CodeView store={files} jump={jump} />}
                 {shown === "builds" && <BuildsView detail={detail} flasher={flasher} />}
+                {shown === "device" && <DeviceConsole hmiText={detail.hmi} />}
               </div>
             </>
           ) : (

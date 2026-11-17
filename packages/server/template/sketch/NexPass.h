@@ -16,6 +16,18 @@
 //   For 3 s after each instruction from the host, send() drops the sketch's instructions, so they
 //   can't get between the host's handshake and its next instruction (a TFT upload fails otherwise).
 // - Keep Serial.print debugging out of normal operation: it shares the USB line with the display traffic.
+//
+// Talking to the app (Claude's device_ask tool and the page's console) without disturbing the display:
+//   NexPass.onRequest(handle);                        // in setup()
+//   void handle(const char *req) {                    // req is the text after '@', e.g. "codes"
+//     if (!strcmp(req, "temp")) { Print &o = NexPass.beginReply(); o.print(temp, 1); NexPass.endReply(); }
+//     else NexPass.reply("unknown request");
+//   }
+//   NexPass.reply("door opened");                     // also fine unprompted: shows in the console
+// - The host sends "@<request>" + FF FF FF (at most 90 characters). NexPass keeps it from the display,
+//   calls the handler from poll(), then sends an end marker so the host knows the answer is complete.
+// - Each reply is one message: A5 <text> FF FF FF; the end marker is A6 FF FF FF. Don't print 0xFF
+//   bytes inside a reply. Call reply() as often as needed for a long answer (one line each).
 #pragma once
 #include <Arduino.h>
 
@@ -30,15 +42,7 @@ class NexPassClass {
   void poll() {
     if (!disp_) return;
     while (Serial.available()) hostByte((uint8_t)Serial.read());
-    while (disp_->available()) {
-      uint8_t b = (uint8_t)disp_->read();
-      Serial.write(b);
-      uint8_t next = (uint8_t)((head_ + 1) % sizeof(ring_));
-      if (next != tail_) {
-        ring_[head_] = b;
-        head_ = next;
-      }
-    }
+    forwardDisplay();
   }
 
   int available() { return (int)((head_ + sizeof(ring_) - tail_) % sizeof(ring_)); }
@@ -62,8 +66,35 @@ class NexPassClass {
 
   HardwareSerial &display() { return *disp_; }
 
+  typedef void (*RequestHandler)(const char *request);
+  /** Handle "@..." requests from the app (see the top of this file). */
+  void onRequest(RequestHandler handler) { onRequest_ = handler; }
+
+  /** Send one message to the app. Safe to call any time; it waits (briefly) for a display message
+   *  in flight on USB to finish so the two can't interleave. */
+  void reply(const char *text) {
+    beginReply().print(text);
+    endReply();
+  }
+  void reply(const __FlashStringHelper *text) {
+    beginReply().print(text);
+    endReply();
+  }
+  /** For replies built from several prints: Print &o = beginReply(); o.print(...); endReply(); */
+  Print &beginReply() {
+    unsigned long t = millis();
+    while (dispMid_ && millis() - t < 30) forwardDisplay();
+    dispMid_ = false;  // a display message cut off for 30 ms is not coming back together anyway
+    Serial.write((uint8_t)0xA5);
+    return Serial;
+  }
+  void endReply() { term(); }
+
  private:
   HardwareSerial *disp_ = nullptr;
+  RequestHandler onRequest_ = nullptr;
+  bool dispMid_ = false;  // part of a display message has gone to USB, but not its FF FF FF yet
+  uint8_t dispFfs_ = 0;
   uint8_t ring_[128];
   uint8_t head_ = 0, tail_ = 0;
   char line_[96];
@@ -74,12 +105,54 @@ class NexPassClass {
   static const unsigned long HOST_QUIET_MS = 3000;
   bool hostBusy() const { return hostSeen_ && millis() - hostAt_ < HOST_QUIET_MS; }
 
+  // Display -> USB (and the sketch's ring buffer), tracking message boundaries for reply().
+  void forwardDisplay() {
+    while (disp_->available()) {
+      uint8_t b = (uint8_t)disp_->read();
+      Serial.write(b);
+      dispFfs_ = (b == 0xff) ? dispFfs_ + 1 : 0;
+      dispMid_ = dispFfs_ < 3;
+      if (dispFfs_ >= 3) dispFfs_ = 0;
+      uint8_t next = (uint8_t)((head_ + 1) % sizeof(ring_));
+      if (next != tail_) {
+        ring_[head_] = b;
+        head_ = next;
+      }
+    }
+  }
+
+  void request(char *text) {
+    if (onRequest_) onRequest_(text);
+    else reply(F("this sketch doesn't handle requests (NexPass.onRequest)"));
+    Serial.write((uint8_t)0xA6);
+    term();
+  }
+
+  static void term() {
+    Serial.write((uint8_t)0xff);
+    Serial.write((uint8_t)0xff);
+    Serial.write((uint8_t)0xff);
+  }
+
   void hostByte(uint8_t b) {
     if (len_ < sizeof(line_)) line_[len_] = (char)b;
     len_++;
     ffs_ = (b == 0xff) ? ffs_ + 1 : 0;
     if (ffs_ < 3) return;
     // one complete instruction (or a bare FF FF FF)
+    if (len_ > 3 && line_[0] == '@') {  // a request for the sketch, not for the display
+      if (len_ <= sizeof(line_)) {
+        line_[len_ - 3] = 0;
+        request(line_ + 1);
+      } else {
+        reply(F("request too long"));
+        Serial.write((uint8_t)0xA6);
+        term();
+      }
+      len_ = 0;
+      ffs_ = 0;
+      return;
+    }
     hostSeen_ = true;
     hostAt_ = millis();
     uint8_t n = len_ <= sizeof(line_) ? len_ : sizeof(line_);

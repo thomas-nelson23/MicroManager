@@ -15,6 +15,8 @@ export class ProjectHub {
   private pending = new Map<string, Pending>();
   private events: ChatEvent[] | null = null;
   busy = false;
+  /** Inspector edits to hmi.txt since Claude's last turn ("main.b0: bco, txt"), told to Claude next time. */
+  screenEdits = new Set<string>();
   onClientMessage: (msg: ClientMessage) => void = () => {};
 
   constructor(readonly projectId: string) {}

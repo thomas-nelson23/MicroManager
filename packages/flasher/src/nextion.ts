@@ -34,11 +34,19 @@ export type NexReply =
   | { touch: { page: number; component: number; event: "press" | "release" } }
   | { page: number }
   | { code: string; meaning: string }
+  | { sketch: string }
+  | { sketchDone: true }
   | { raw: string };
+
+/** NexPass frames from the sketch itself (NexPass.reply / the end of an answer to an "@" request). */
+export const SKETCH_MSG = 0xa5;
+export const SKETCH_DONE = 0xa6;
 
 /** Decode one display message (without the FF FF FF terminator). */
 export function decodeReply(m: Uint8Array): NexReply {
   const t = m[0];
+  if (t === SKETCH_MSG) return { sketch: dec.decode(m.subarray(1)) };
+  if (t === SKETCH_DONE && m.length === 1) return { sketchDone: true };
   if (t === 0x70) return { string: dec.decode(m.subarray(1)) };
   if (t === 0x71 && m.length >= 5) return { number: new DataView(m.buffer, m.byteOffset + 1, 4).getInt32(0, true) };
   if (t === 0x65 && m.length >= 4) return { touch: { page: m[1]!, component: m[2]!, event: m[3] ? "press" : "release" } };
@@ -117,6 +125,29 @@ export class Nextion {
     const isGet = /^\s*get\s/.test(instruction);
     const msgs = await this.collect(waitMs, (m) => m.length > 0 && (isGet || m.some((x) => x.length === 1)));
     return msgs.map(decodeReply);
+  }
+
+  /**
+   * Ask the running sketch something (NexPass.onRequest): sends "@request" and returns its reply lines.
+   * Other messages that arrive meanwhile (touch events, display replies) come back in `other`.
+   */
+  async ask(request: string, waitMs = 3000): Promise<{ lines: string[]; other: NexReply[] }> {
+    if (/[\xff\r\n]/.test(request) || request.length > 90) throw new Error("a request is one line of at most 90 characters");
+    this.port.rx.clear();
+    await this.send(`@${request}`);
+    const msgs = await this.collect(waitMs, (m) => m.some((x) => x.length === 1 && x[0] === SKETCH_DONE));
+    const replies = msgs.map(decodeReply);
+    const lines = replies.flatMap((r) => ("sketch" in r ? [r.sketch] : []));
+    const other = replies.filter((r) => !("sketch" in r) && !("sketchDone" in r));
+    if (!replies.some((r) => "sketchDone" in r)) {
+      const display = other.some((r) => "code" in r);
+      throw new Error(
+        display
+          ? "the display answered instead of the sketch: this sketch's NexPass.h is older than the request channel. Rebuild and flash the sketch."
+          : `the sketch didn't finish answering within ${waitMs / 1000} s${lines.length ? ` (got: ${lines.join(" | ")})` : ""}. Is the sketch running and calling NexPass.poll() often?`,
+      );
+    }
+    return { lines, other };
   }
 
   /**

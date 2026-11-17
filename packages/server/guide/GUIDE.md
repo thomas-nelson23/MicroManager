@@ -22,7 +22,8 @@ project.json        title, description, board, display. You may update "title" a
 wiring.json         the wiring as data. Change it with the `wire` tool, not Read/Edit.
 hardware.md         hardware notes that don't fit wiring.json (voltages, part numbers). No pin table.
 sketch/sketch.ino   the Arduino sketch (folder and main file keep these names); more files beside it.
-                    sketch/NexPass.h is the passthrough library: don't edit it.
+                    sketch/NexPass.h is the passthrough library: don't edit it (builds refresh it).
+device.md           requests the sketch answers (below), as "| Request | Answer |", when it has any.
 nextion/hmi.txt     the screen: a JSON array, one line per page or component (below).
 nextion/star.txt    Program.s, runs at power-on.
 nextion/font/N.zi   fonts by index: 0.zi Arial bold 24 px, 1.zi Arial bold 48 px. Only the person can add fonts.
@@ -52,6 +53,14 @@ uploads/            pictures the person attached; their message names them: Read
 - Say in a few words what else a part needs (resistor, library, supply).
 - A board or display switch is handled by the app: it renames the wiring's pins and scales the screen
   to the new resolution. Don't redo that; only fix what the person asks or what a build reports.
+
+## Asking the sketch (device.md)
+
+When the device holds data you'd otherwise ask the person to read out (stored codes, readings,
+settings), give the sketch a request handler: `NexPass.onRequest(fn)` in setup(), `void fn(const char *req)`
+gets the text after `@` and answers with `NexPass.reply("...")`, one call per line (NexPass.h shows more).
+Then `display` with `@codes` returns the lines. List the requests in device.md. Save pulled data the
+project needs into a file (e.g. `data/codes.json`).
 
 ## Workflow
 
