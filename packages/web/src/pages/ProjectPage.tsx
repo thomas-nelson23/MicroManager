@@ -272,6 +272,16 @@ function StatusStrip({ detail, project, flasher, ask, toChat, navigate, onBuilds
     }
   };
 
+  // A rebuild is the server's job: no Claude turn for it.
+  const [rebuilding, setRebuilding] = useState(false);
+  const rebuild = async () => {
+    setRebuilding(true);
+    const sketchStale = !!latest?.sketch?.ok && !!latest.board && latest.board !== meta.board.fqbn;
+    const screenStale = !!latest?.screen?.ok && !!latest.display && latest.display !== meta.display.model;
+    await run(() => api.rebuild(meta.id, sketchStale && screenStale ? "both" : screenStale ? "screen" : "sketch"));
+    setRebuilding(false);
+  };
+
   const changeBoard = async (boardId: string) => {
     const next = boards.find((b) => b.id === boardId);
     if (!next || next.fqbn === meta.board.fqbn) return;
@@ -282,7 +292,7 @@ function StatusStrip({ detail, project, flasher, ask, toChat, navigate, onBuilds
         body: (
           <>
             <p>The sketch must be rebuilt for the new board, and builds made so far are marked as made for other hardware.</p>
-            <p>Pin names differ between boards, so the wiring and the sketch's pins need adapting. A request for Claude to do that is put in the message box for you to send.</p>
+            <p>The app renames the wiring's pins for the new board. Check the Wiring tab afterwards, then build again.</p>
             {!next.fiveVoltTolerant && <p><b>{next.name} runs at {next.volts} V and its pins are not 5 V tolerant.</b> Parts that output 5 V need a level shifter.</p>}
           </>
         ),
@@ -291,7 +301,6 @@ function StatusStrip({ detail, project, flasher, ask, toChat, navigate, onBuilds
     )
       return;
     await run(() => api.update(meta.id, { board: next.id }));
-    if (hasWork) toChat(`I switched the board to ${next.name}. Update the pins in the sketch and wiring.json for it, and tell me what I need to rewire.`);
   };
 
   const changeDisplay = async (model: string) => {
@@ -306,7 +315,7 @@ function StatusStrip({ detail, project, flasher, ask, toChat, navigate, onBuilds
           <>
             <p>The screen must be rebuilt for the new display, and screens built so far are marked as made for other hardware.</p>
             {resized ? (
-              <p>The new display is {next.width} × {next.height}, not {meta.display.width} × {meta.display.height}. Components keep their positions and sizes, so the layout needs rearranging. A request for Claude to do that is put in the message box for you to send.</p>
+              <p>The new display is {next.width} × {next.height}, not {meta.display.width} × {meta.display.height}. The app scales every component's position and size to fit. Fonts keep their size, so check the Screen tab afterwards.</p>
             ) : (
               <p>The resolution is the same, so the layout carries over.</p>
             )}
@@ -317,8 +326,6 @@ function StatusStrip({ detail, project, flasher, ask, toChat, navigate, onBuilds
     )
       return;
     await run(() => api.update(meta.id, { display: next.model }));
-    if (resized && builds.length > 0) toChat(`I switched the display to ${next.model} (${next.width} × ${next.height}). Rearrange the screen to fit it and rebuild.`);
-    else if (builds.length > 0) toChat(`I switched the display to ${next.model}. Rebuild the screen for it.`);
   };
 
   const rename = async () => {
@@ -480,7 +487,10 @@ function StatusStrip({ detail, project, flasher, ask, toChat, navigate, onBuilds
         </div>
       )}
       {stale && !latestOn && flasher.running === null && (
-        <div className="msg info strip-msg" role="status"><span className="led" /><div className="body">Build #{latest!.n} was made before the hardware changed: {stale}. Ask Claude to rebuild.</div></div>
+        <div className="msg info strip-msg" role="status"><span className="led" /><div className="body">
+            Build #{latest!.n} was made before the hardware changed: {stale}.
+            <button className="btn" type="button" disabled={locked || rebuilding} onClick={() => void rebuild()}>{rebuilding ? "Rebuilding…" : "Rebuild"}</button>
+          </div></div>
       )}
       {error && (
         <div className="msg bad strip-msg" role="alert"><span className="led" /><div className="body">{error}<button className="btn quiet" type="button" onClick={() => setError(null)}>Dismiss</button></div></div>

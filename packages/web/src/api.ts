@@ -76,6 +76,8 @@ export const api = {
   duplicate: (id: string, title: string) => send(`/api/projects/${id}/duplicate`, "POST", { title }).then((r) => json<ProjectMeta>(r)),
   newConversation: (id: string) => send(`/api/projects/${id}/conversation`, "POST").then((r) => json<{ ok: boolean }>(r)),
   file: (id: string, path: string) => fetch(`/api/projects/${id}/file?path=${encodeURIComponent(path)}`).then((r) => (r.ok ? r.text() : Promise.reject(new Error(r.statusText)))),
+  /** Build the project as it is on the server, without Claude. */
+  rebuild: (id: string, target: "sketch" | "screen" | "both") => send(`/api/projects/${id}/builds`, "POST", { target, label: "rebuild" }).then((r) => json<BuildRecord>(r)),
   markFlashed: (id: string, n: number, parts: { sketch: boolean; screen: boolean }) => send(`/api/projects/${id}/builds/${n}/flashed`, "POST", parts),
   buildFileUrl: (id: string, n: number, file: string) => `/api/projects/${id}/builds/${n}/${file}`,
   uploadUrl: (id: string, path: string) => `/api/projects/${id}/upload/${path.replace(/^uploads\//, "")}`,

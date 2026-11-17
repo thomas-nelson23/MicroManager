@@ -98,12 +98,12 @@ function useElapsed(since: string | undefined, on: boolean): number {
   return since ? Math.max(0, Math.round((now - Date.parse(since)) / 1000)) : 0;
 }
 
-/** Shrink a picture to at most 1600 px on its long side and return it as a JPEG data URL. */
+/** Shrink a picture to at most 1024 px on its long side (about 1,000 tokens for Claude, and it stays in the conversation) and return it as a JPEG data URL. */
 async function shrink(file: File): Promise<Picture | null> {
   if (!file.type.startsWith("image/")) return null;
   try {
     const bmp = await createImageBitmap(file);
-    const k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+    const k = Math.min(1, 1024 / Math.max(bmp.width, bmp.height));
     const canvas = document.createElement("canvas");
     canvas.width = Math.round(bmp.width * k);
     canvas.height = Math.round(bmp.height * k);

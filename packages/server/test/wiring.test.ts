@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { BOARDS, boardById, boardByUsb, findPins } from "../src/boards.ts";
 import { DISPLAYS, displayByReported } from "../src/displays.ts";
-import { checkWiring, parseWiring, sketchPins, wiringFromHardwareMd } from "../src/wiring.ts";
+import { applyWiring, checkWiring, formatWiring, parseWiring, remapWiring, sketchPins, stripHardwareTable, wiringFromHardwareMd, wiringLines } from "../src/wiring.ts";
+import { retargetHmi } from "../src/hmi-compact.ts";
 import { readFileSync } from "node:fs";
 
 const nano = boardById("nano-every")!;
@@ -131,5 +132,42 @@ describe("checkWiring", () => {
     expect(out.map((i) => i.level)).toEqual(["warn", "info"]);
     expect(out[0]!.pin).toBe("D6");
     expect(out[1]!.pin).toBe("D4");
+  });
+});
+
+describe("work the container does instead of Claude", () => {
+  const w = { connections: [{ pin: "TX1", part: "Nextion display", partPin: "RX", color: "yellow" }, { pin: "5V", part: "Nextion display", partPin: "5V" }, { pin: "D4", part: "IR receiver", partPin: "OUT" }, { pin: "A0", part: "Pot", partPin: "W" }] };
+  it("writes wiring.json one wire per line and reads it back", () => {
+    const text = formatWiring(w);
+    expect(text.split("\n")[2]).toBe('    {"pin": "TX1", "part": "Nextion display", "partPin": "RX", "color": "yellow"},');
+    expect(parseWiring(text).wiring).toEqual(w);
+    expect(parseWiring(formatWiring({ connections: [] })).wiring.connections).toEqual([]);
+  });
+  it("adds, replaces and removes wires", () => {
+    const moved = applyWiring(w, { set: [{ pin: "D7", part: "IR receiver", partPin: "OUT" }, { pin: "D9", part: "Servo", partPin: "SIG" }], remove: ["pot"] });
+    expect(wiringLines(moved)).toBe("TX1 Nextion display RX; 5V Nextion display 5V; D7 IR receiver OUT; D9 Servo SIG");
+    expect(applyWiring(w, { remove: ["d4"] }).connections.map((c) => c.part)).not.toContain("IR receiver");
+    expect(wiringLines({ connections: [] })).toBe("no wires");
+  });
+  it("renames pins for another board", () => {
+    const t = remapWiring(w, nano, teensy);
+    expect(t.connections.map((c) => c.pin)).toEqual(["1", "VIN", "4", "14"]);
+    expect(checkWiring(teensy, t).filter((i) => i.level === "error")).toEqual([]);
+    expect(remapWiring(t, teensy, nano).connections.map((c) => c.pin)).toEqual(["TX1", "5V", "D4", "A0"]);
+    expect(remapWiring({ connections: [{ pin: "33", part: "LED" }] }, teensy, nano).connections[0]!.pin).toBe("33");
+  });
+  it("takes the pin table out of hardware.md", () => {
+    const md = "# Hardware\n\n| Pin | Goes to |\n|---|---|\n| D4 | IR receiver OUT |\n\nNotes stay.";
+    expect(stripHardwareTable(md)).toBe("# Hardware\n\nThe connections are in wiring.json.\n\nNotes stay.");
+  });
+  it("scales a screen to a new resolution, one line per element", () => {
+    const hmi = ['[', '  {"dire": "0", "model": "NX4827P043_011", "ser": "Intelligent"},', '  {"page": "main", "bco": 0},', '  {"obj": "text", "name": "t0", "x": 20, "y": 20, "w": 440, "h": 40, "txt": "x: 5", "on": {"down": "t0.txt=\\"h\\""}},', '  {"obj": "timer", "name": "tm0", "tim": 1000}', ']'].join("\n");
+    const out = retargetHmi(hmi, { width: 480, height: 272 }, { width: 800, height: 480 }).split("\n");
+    expect(out[1]).toBe('  {"dire": "0"},');
+    expect(out[2]).toBe('  {"page": "main", "bco": 0},');
+    expect(out[3]).toBe('  {"obj": "text", "name": "t0", "x": 33, "y": 35, "w": 733, "h": 71, "txt": "x: 5", "on": {"down": "t0.txt=\\"h\\""}},');
+    expect(out[4]).toBe('  {"obj": "timer", "name": "tm0", "tim": 1000}');
+    expect(out.every((l, i) => i === 0 || i === out.length - 1 || JSON.parse(l.replace(/,$/, "")))).toBe(true);
+    expect(retargetHmi(hmi, { width: 480, height: 272 }, { width: 480, height: 272 }).split("\n")[3]).toBe(hmi.split("\n")[3]);
   });
 });

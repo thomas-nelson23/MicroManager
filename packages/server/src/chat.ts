@@ -11,7 +11,9 @@ import { componentInfo } from "./components.ts";
 import { config } from "./config.ts";
 import { hubFor, type ProjectHub } from "./hub.ts";
 import type { ChatEvent, ClientMessage } from "./protocol.ts";
-import { listBuilds, markFlashed, projectDir, readMeta, writeMeta } from "./projects.ts";
+import { boardByFqbn } from "./boards.ts";
+import { listBuilds, markFlashed, projectDir, readMeta, readWiring, writeMeta, writeWiring } from "./projects.ts";
+import { applyWiring, checkWiring, wiringLines } from "./wiring.ts";
 
 const GUIDE_DIR = path.join(config.serverRoot, "guide");
 const GUIDE_FULL = fs.readFileSync(path.join(GUIDE_DIR, "GUIDE.md"), "utf8");
@@ -28,7 +30,7 @@ export function splitGuide(md: string): { guide: string; boards: Map<string, str
 }
 const { guide: GUIDE, boards: BOARD_NOTES } = splitGuide(GUIDE_FULL);
 
-const PREAMBLE = `You are Claude, working inside NextionDesigner, a web app where a person builds Arduino + Nextion display projects by chatting with you. Your tools: Read, Edit, Write, Glob and Grep on the project folder (your working directory), and the bench tools (ship, check_screen, flash, display, component_info, install_library). Read a file before you Edit it, and give Edit the exact text. Use relative paths. Be brief.`;
+const PREAMBLE = `You are Claude, working inside NextionDesigner, a web app where a person builds Arduino + Nextion display projects by chatting with you. Your tools: Read, Edit, Write, Glob and Grep on the project folder (your working directory), and the bench tools (ship, wire, check_screen, flash, display, component_info, install_library). Read a file before you Edit it, and give Edit the exact text. Use relative paths. Be brief.`;
 
 const text = (s: string, isError = false) => ({ content: [{ type: "text" as const, text: s }], ...(isError ? { isError: true } : {}) });
 
@@ -167,6 +169,30 @@ function benchServer(projectId: string, hub: ProjectHub) {
         },
       ),
       tool(
+        "wire",
+        "Change the project's wiring (wiring.json) without reading or editing the file, and get the resulting wiring and any problems the app found (pin missing on this board, two parts on a pin, no PWM, 5 V into a 3.3 V pin). `remove` runs first. Call with no arguments to see the wiring.",
+        {
+          set: z
+            .array(z.object({ pin: z.string(), part: z.string(), partPin: z.string().optional(), color: z.string().optional(), signal: z.string().optional().describe("'5V' when the part drives 5 V into the pin") }))
+            .max(40)
+            .optional()
+            .describe("Wires to add; replaces that part's wire with the same partPin"),
+          remove: z.array(z.string()).max(40).optional().describe("Part names (all their wires) or board pins to clear"),
+        },
+        async ({ set, remove }) => {
+          const cur = await readWiring(projectId);
+          if (cur.error) return text(`${cur.error}. Fix or rewrite wiring.json.`, true);
+          const next = set?.length || remove?.length ? applyWiring(cur.wiring, { set, remove }) : cur.wiring;
+          if (next !== cur.wiring) {
+            await writeWiring(projectId, next);
+            hub.broadcast({ type: "project_changed" });
+          }
+          const board = boardByFqbn((await readMeta(projectId)).board.fqbn);
+          const issues = board ? checkWiring(board, next).filter((i) => i.level !== "info") : [];
+          return text(`${wiringLines(next)}${issues.length ? `\nproblems:\n${issues.map((i) => `- ${i.text}`).join("\n")}` : ""}`);
+        },
+      ),
+      tool(
         "check_screen",
         "Validate nextion/hmi.txt without building (ship does this too): shape, component types, attributes, text lengths, events, and that every obj.attr in event code exists.",
         {},
@@ -244,6 +270,8 @@ function toolLabel(name: string, input: Record<string, unknown>, cwd: string): {
       return { label: "CHECK", detail: "screen" };
     case "mcp__bench__ship":
       return { label: input.flash === false ? "BUILD" : "SHIP", detail: `${input.target} · ${input.label ?? ""}` };
+    case "mcp__bench__wire":
+      return { label: "WIRING", detail: [...((input.set as { pin: string; part: string }[] | undefined) ?? []).map((c) => `${c.part} on ${c.pin}`), ...((input.remove as string[] | undefined) ?? []).map((r) => `remove ${r}`)].join(" · ") || "look" };
     case "mcp__bench__component_info":
       return { label: "LOOKUP", detail: String(input.type ?? "") };
     case "mcp__bench__flash":
@@ -362,7 +390,7 @@ export async function sendMessage(projectId: string, typedText: string, attached
     }
     const tools = ["Read", "Edit", "Write", "Glob", "Grep"];
     if (config.allowBash) tools.push("Bash");
-    const allowed = [...tools, "mcp__bench__ship", "mcp__bench__check_screen", "mcp__bench__component_info", "mcp__bench__flash", "mcp__bench__display", "mcp__bench__install_library"];
+    const allowed = [...tools, "mcp__bench__ship", "mcp__bench__wire", "mcp__bench__check_screen", "mcp__bench__component_info", "mcp__bench__flash", "mcp__bench__display", "mcp__bench__install_library"];
     const boardNotes = BOARD_NOTES.get(meta.board.fqbn) ?? "";
     const q = query({
       prompt: userText,

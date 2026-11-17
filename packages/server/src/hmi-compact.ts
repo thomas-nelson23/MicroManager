@@ -75,3 +75,25 @@ export function expandHmi(elements: unknown[]): ExpandedCommand[] {
   });
   return out;
 }
+
+/**
+ * Move a screen to another display without Claude: scale every component's x, y, w and h to the new
+ * resolution and drop the old model and series from the settings line (the build fills them in from
+ * the project). Works line by line, so the file keeps its one-element-per-line shape.
+ */
+export function retargetHmi(text: string, from: { width: number; height: number }, to: { width: number; height: number }): string {
+  const sx = to.width / from.width;
+  const sy = to.height / from.height;
+  let settingsDone = false;
+  return text
+    .split("\n")
+    .map((line) => {
+      if (!settingsDone && /^\s*\{/.test(line)) {
+        settingsDone = true;
+        if (!/"(page|obj|com)"\s*:/.test(line)) return line.replace(/\s*"(model|ser)"\s*:\s*"[^"]*"\s*,?/g, "").replace(/,\s*\}/, "}").replace(/\{\s+/, "{");
+      }
+      if ((sx === 1 && sy === 1) || !/"obj"\s*:/.test(line)) return line;
+      return line.replace(/"(x|y|w|h)"(\s*:\s*)(\d+)(?=\s*[,}])/g, (_m, k: string, sep: string, v: string) => `"${k}"${sep}${Math.round(Number(v) * (k === "x" || k === "w" ? sx : sy))}`);
+    })
+    .join("\n");
+}
