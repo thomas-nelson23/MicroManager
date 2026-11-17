@@ -12,6 +12,9 @@ type ResultEv = Extract<ChatEvent, { kind: "tool_result" }>;
 type FlashEv = Extract<ChatEvent, { kind: "flash" }>;
 type Picture = { name: string; dataUrl: string };
 
+/** 12345 to "12k", 950 to "950". */
+const kTokens = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
+
 function ToolRows({ tools, results }: { tools: ToolEv[]; results: Map<string, ResultEv> }) {
   const [open, setOpen] = useState<string | null>(null);
   return (
@@ -128,7 +131,9 @@ export function ChatPanel({ project, draft, setDraft, focusKey, onCollapse }: Pr
   const [atBottom, setAtBottom] = useState(true);
   const [unseen, setUnseen] = useState(false);
   const [pictures, setPictures] = useState<Picture[]>([]);
-  const [queued, setQueued] = useState<{ text: string; pictures: Picture[] } | null>(null);
+  const [queued, setQueued] = useState<{ text: string; pictures: Picture[]; strong: boolean } | null>(null);
+  /** Send the next message to the stronger (and costlier) model; switches itself off after sending. */
+  const [strong, setStrong] = useState(false);
   const [menu, setMenu] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -165,7 +170,7 @@ export function ChatPanel({ project, draft, setDraft, focusKey, onCollapse }: Pr
   // A follow-up typed while Claude works goes out when the turn ends.
   useEffect(() => {
     if (!queued || busy || !connected) return;
-    if (project.sendText(queued.text, queued.pictures)) setQueued(null);
+    if (project.sendText(queued.text, queued.pictures, queued.strong)) setQueued(null);
   }, [queued, busy, connected, project]);
 
   const results = new Map<string, ResultEv>();
@@ -210,7 +215,12 @@ export function ChatPanel({ project, draft, setDraft, focusKey, onCollapse }: Pr
         <div key={e.id} className={`chat-end ${e.ok ? "" : "bad"}`}>
           {e.ok ? "Done" : e.error === "Stopped." ? "Stopped" : `Stopped with an error: ${e.error}`}
           {e.seconds !== undefined && ` · ${clock(e.seconds)}`}
-          {e.costUsd !== undefined && e.costUsd > 0 && ` · $${e.costUsd.toFixed(2)}`}
+          {e.tokens && (
+            <span title={`${e.tokens.model}: ${e.tokens.input.toLocaleString()} new input tokens, ${e.tokens.cached.toLocaleString()} read from cache, ${e.tokens.output.toLocaleString()} output, over ${e.tokens.steps} steps. Conversation is now ${e.tokens.context.toLocaleString()} tokens.`}>
+              {` · ${e.tokens.steps} steps · ${kTokens(e.tokens.input + e.tokens.cached)} in, ${kTokens(e.tokens.output)} out`}
+              {/opus/i.test(e.tokens.model) && " · Opus"}
+            </span>
+          )}
         </div>,
       );
     else if (e.kind === "notice") blocks.push(<div key={e.id} className="chat-end">{e.text}</div>);
@@ -233,14 +243,15 @@ export function ChatPanel({ project, draft, setDraft, focusKey, onCollapse }: Pr
     if (!text && !pictures.length) return;
     if (busy) {
       if (queued) return;
-      setQueued({ text, pictures });
-    } else if (!project.sendText(text, pictures)) {
+      setQueued({ text, pictures, strong });
+    } else if (!project.sendText(text, pictures, strong)) {
       setNotice("Not sent: the connection to the server is down. Your message is still in the box.");
       return;
     }
     setNotice(null);
     setDraft("");
     setPictures([]);
+    setStrong(false);
     setAtBottom(true);
     requestAnimationFrame(toBottom);
   };
@@ -362,6 +373,15 @@ export function ChatPanel({ project, draft, setDraft, focusKey, onCollapse }: Pr
           <div className="chat-compose-btns">
             <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={(e) => { void addFiles([...(e.target.files ?? [])]); e.target.value = ""; }} />
             <button className="btn md quiet icon-only" type="button" aria-label="Attach a picture" title="Attach a picture, for example a photo of the wiring" onClick={() => fileInput.current?.click()}><Icon name="image" /></button>
+            <button
+              className={`btn md quiet ${strong ? "strong-on" : ""}`}
+              type="button"
+              aria-pressed={strong}
+              title="Think harder: send this message to the stronger model. It uses your Claude plan several times faster, so keep it for tricky problems."
+              onClick={() => setStrong(!strong)}
+            >
+              Think harder
+            </button>
             <button className="btn md primary" type="submit" disabled={!canSend}>{busy ? "Queue" : "Send"}</button>
           </div>
         </div>

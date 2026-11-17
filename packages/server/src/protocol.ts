@@ -17,7 +17,16 @@ export type ChatEvent =
       status: "waiting" | "done" | "failed" | "skipped";
       message?: string;
     }
-  | { kind: "turn_end"; id: string; ok: boolean; error?: string; costUsd?: number; seconds?: number }
+  | {
+      kind: "turn_end";
+      id: string;
+      ok: boolean;
+      error?: string;
+      costUsd?: number;
+      seconds?: number;
+      /** Token use for the turn: fresh input, input read from the prompt cache, output, and the context size at the end. */
+      tokens?: { input: number; cached: number; output: number; context: number; steps: number; model: string };
+    }
   | { kind: "notice"; id: string; text: string };
 
 export type ServerMessage =
@@ -29,7 +38,7 @@ export type ServerMessage =
   | { type: "device_request"; id: string; commands: string[]; listenSeconds?: number };
 
 export type ClientMessage =
-  | { type: "send"; text: string; /** Attached pictures as data URLs. */ images?: { name: string; dataUrl: string }[] }
+  | { type: "send"; text: string; /** Attached pictures as data URLs. */ images?: { name: string; dataUrl: string }[]; /** Use the stronger model for this message. */ strong?: boolean }
   | { type: "interrupt" }
   | { type: "flash_result"; id: string; status: "done" | "failed" | "skipped"; message?: string }
   | { type: "device_result"; id: string; ok: boolean; replies?: unknown[]; error?: string };

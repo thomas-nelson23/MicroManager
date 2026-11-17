@@ -49,7 +49,7 @@ app.post("/api/projects", async (c) => {
 
 app.get("/api/projects/:id", async (c) => {
   const id = c.req.param("id");
-  const [{ sessionId: _session, ...meta }, files, builds, wiring] = await Promise.all([readMeta(id), listFiles(id), listBuilds(id), readWiring(id)]);
+  const [{ sessionId: _session, sessionAt: _at, sessionContext: _ctx, ...meta }, files, builds, wiring] = await Promise.all([readMeta(id), listFiles(id), listBuilds(id), readWiring(id)]);
   const read = (rel: string) => fs.readFile(safePath(id, rel), "utf8").catch(() => "");
   const [hmi, hardware, sketch] = await Promise.all([read("nextion/hmi.txt"), read("hardware.md"), read("sketch/sketch.ino")]);
   // font index -> pixel height (byte 7 of a .zi header)
@@ -169,7 +169,7 @@ server.on("upgrade", (req, socket, head) => {
     }
     const hub = hubFor(id);
     hub.onClientMessage = (msg) => {
-      if (msg.type === "send" && (msg.text.trim() || msg.images?.length)) void sendMessage(id, msg.text.trim(), msg.images);
+      if (msg.type === "send" && (msg.text.trim() || msg.images?.length)) void sendMessage(id, msg.text.trim(), msg.images, { strong: msg.strong === true });
       else if (msg.type === "interrupt") interrupt(id);
     };
     await hub.addSocket(ws);

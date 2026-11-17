@@ -16,6 +16,9 @@ export interface ProjectMeta {
   updatedAt: string;
   /** Claude Agent SDK session to resume, once the first message was sent. */
   sessionId?: string;
+  /** When that session last finished a turn, and how big its context was then (tokens). */
+  sessionAt?: string;
+  sessionContext?: number;
 }
 
 export interface BuildPart {
@@ -201,7 +204,7 @@ export async function duplicateProject(srcId: string, title: string): Promise<Pr
   });
   await fs.mkdir(path.join(dir, "builds"), { recursive: true });
   const now = new Date().toISOString();
-  const { sessionId: _s, ...rest } = src;
+  const { sessionId: _s, sessionAt: _a, sessionContext: _c, ...rest } = src;
   const meta: ProjectMeta = { ...rest, id, title: title.trim() || `${src.title} copy`, createdAt: now, updatedAt: now };
   await writeMeta(meta);
   return meta;
