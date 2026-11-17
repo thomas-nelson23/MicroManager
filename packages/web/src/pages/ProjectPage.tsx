@@ -495,18 +495,24 @@ function StatusStrip({ detail, project, flasher, ask, toChat, navigate, onBuilds
   );
 }
 
-/** WebHID can only be granted from a click, so the first Teensy flash stops here once. */
+/**
+ * WebHID can only be granted from a click. When the chooser couldn't open inside the Flash click,
+ * the flash waits here: a modal, because a corner toast was easy to miss while the Teensy sat in
+ * its bootloader with the LED red.
+ */
 function BootloaderPrompt() {
   const device = useDevice();
   return (
-    <div className="msg toast info busy-toast" role="alertdialog" aria-label="Allow the Teensy bootloader">
-      <span className="led" />
-      <div className="body">
-        <b>Allow the Teensy bootloader</b>
-        <span>Pick “Teensy HalfKay” in the list Chrome shows. If the list is empty, press the button on the Teensy first.</span>
-        <div className="row">
+    <div className="scrim">
+      <div className="dialog app-dialog" role="alertdialog" aria-modal="true" aria-label="Allow the Teensy bootloader">
+        <h2 className="h3">Allow the Teensy bootloader</h2>
+        <div className="dialog-body">
+          <p>The Teensy is in its bootloader (red LED) and waiting for the sketch. Chrome needs your OK once before this page can write to it.</p>
+          <p>Click <b>Allow and flash</b>, then pick “Teensy HalfKay” in the list Chrome shows. If the list is empty, press the white button on the Teensy.</p>
+        </div>
+        <div className="actions end">
           <button className="btn md quiet" type="button" onClick={device.cancelBootloader}>Cancel</button>
-          <button className="btn md primary" type="button" onClick={() => void device.allowBootloader()}>
+          <button className="btn md primary" type="button" autoFocus onClick={() => void device.allowBootloader()}>
             <Icon name="zap" />
             Allow and flash
           </button>
