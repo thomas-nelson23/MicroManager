@@ -244,7 +244,14 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
       setBusy({ label: "Restarting the Teensy into its bootloader" });
       rebooting.current = true;
       await teensyEnterBootloader(t).catch(() => {});
-      hk = await WebHidHalfKay.waitFor(4000);
+      // HalfKay enumerates about a second after the reboot. One already allowed shows up here.
+      hk = await WebHidHalfKay.waitFor(1500);
+    }
+    if (!hk && navigator.userActivation?.isActive) {
+      // Still inside the person's click: open Chrome's device chooser straight away. It lists
+      // HalfKay as soon as it enumerates, so this is a single pick, no second button.
+      setBusy({ label: "Pick “Teensy HalfKay” in the list Chrome shows" });
+      hk = await WebHidHalfKay.request().catch(() => null);
     }
     if (!hk) {
       // Either this page hasn't been allowed to use the bootloader yet, or the sketch didn't reboot.
