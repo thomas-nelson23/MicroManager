@@ -22,8 +22,8 @@ export interface Board {
   id: string;
   fqbn: string;
   name: string;
-  /** How the browser flashes it: UPDI over Web Serial, or Teensy HalfKay over WebHID. */
-  flasher: "nano-every" | "teensy";
+  /** How the browser flashes it: UPDI over Web Serial, Teensy HalfKay over WebHID, or a UF2 file on the RP2040's BOOTSEL drive. */
+  flasher: "nano-every" | "teensy" | "rp2040";
   /** Logic level of the I/O pins, in volts. */
   volts: number;
   /** True when a pin survives a 5 V signal. */
@@ -108,6 +108,45 @@ const TEENSY41_PINS: BoardPin[] = [
   ...[41, 40, 39, 38, 37, 36, 35, 34, 33].map((n) => t41(n, "R")),
 ];
 
+// Raspberry Pi Pico (arduino-pico core). Serial1 = UART0 on GP0/GP1, Serial2 = UART1 on GP8/GP9,
+// Wire on GP4/GP5, Wire1 on GP26/GP27, SPI on GP16-19, SPI1 on GP12-15: the core's defaults.
+const PICO_ROLE: Record<number, string> = {
+  0: "Serial1 TX", 1: "Serial1 RX", 4: "SDA", 5: "SCL", 8: "Serial2 TX", 9: "Serial2 RX",
+  12: "MISO1", 13: "CS1", 14: "SCK1", 15: "MOSI1", 16: "MISO", 17: "CS", 18: "SCK", 19: "MOSI",
+  26: "A0, SDA1", 27: "A1, SCL1", 28: "A2",
+};
+function gp(n: number, side: "L" | "R"): BoardPin {
+  const caps: PinCap[] = ["pwm"];
+  const role = PICO_ROLE[n];
+  if (n >= 26) caps.push("analog");
+  if (role?.includes("Serial")) caps.push("serial");
+  if (role && /SDA|SCL/.test(role)) caps.push("i2c");
+  if (n >= 12 && n <= 19) caps.push("spi");
+  const aliases = [String(n), `D${n}`];
+  if (n >= 26) aliases.push(`A${n - 26}`);
+  if (n === 0) aliases.push("TX1");
+  if (n === 1) aliases.push("RX1");
+  return io(`GP${n}`, side, caps, { aliases, ...(role ? { role } : {}) });
+}
+const gnd = (side: "L" | "R") => fixed("GND", side, "gnd");
+
+const PICO_PINS: BoardPin[] = [
+  gp(0, "L"), gp(1, "L"), gnd("L"), gp(2, "L"), gp(3, "L"), gp(4, "L"), gp(5, "L"), gnd("L"),
+  gp(6, "L"), gp(7, "L"), gp(8, "L"), gp(9, "L"), gnd("L"), gp(10, "L"), gp(11, "L"), gp(12, "L"),
+  gp(13, "L"), gnd("L"), gp(14, "L"), gp(15, "L"),
+  fixed("VBUS", "R", "power", ["5V"]),
+  fixed("VSYS", "R", "power"),
+  gnd("R"),
+  fixed("3V3_EN", "R", "other"),
+  fixed("3V3", "R", "power", ["3.3V", "3V3_OUT", "3V3(OUT)"]),
+  fixed("ADC_VREF", "R", "other", ["AREF"]),
+  gp(28, "R"),
+  fixed("AGND", "R", "gnd"),
+  gp(27, "R"), gp(26, "R"),
+  fixed("RUN", "R", "other", ["RST", "RESET"]),
+  gp(22, "R"), gnd("R"), gp(21, "R"), gp(20, "R"), gp(19, "R"), gp(18, "R"), gnd("R"), gp(17, "R"), gp(16, "R"),
+];
+
 export const BOARDS: Board[] = [
   {
     id: "nano-every",
@@ -130,6 +169,17 @@ export const BOARDS: Board[] = [
     flashKb: 8192,
     usb: [{ vendorId: 0x16c0 }],
     pins: TEENSY41_PINS,
+  },
+  {
+    id: "pico",
+    fqbn: "rp2040:rp2040:rpipico",
+    name: "Raspberry Pi Pico (RP2040)",
+    flasher: "rp2040",
+    volts: 3.3,
+    fiveVoltTolerant: false,
+    flashKb: 2048,
+    usb: [{ vendorId: 0x2e8a }],
+    pins: PICO_PINS,
   },
 ];
 

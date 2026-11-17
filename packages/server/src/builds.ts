@@ -52,9 +52,11 @@ export async function buildSketch(id: string, outDir: string): Promise<BuildPart
   const seconds = Math.round((Date.now() - t0) / 100) / 10;
   if (r.code !== 0) return { ok: false, seconds, error: tail(r.out) };
   const size = sketchSize(r.out);
-  await fs.copyFile(path.join(outDir, "arduino", "sketch.ino.hex"), path.join(outDir, "sketch.hex"));
+  // AVR and Teensy builds flash a .hex; RP2040 builds a .uf2 for its BOOTSEL drive.
+  const ext = (await fs.stat(path.join(outDir, "arduino", "sketch.ino.uf2")).then(() => true, () => false)) ? "uf2" : "hex";
+  await fs.copyFile(path.join(outDir, "arduino", `sketch.ino.${ext}`), path.join(outDir, `sketch.${ext}`));
   await fs.rm(path.join(outDir, "arduino"), { recursive: true, force: true });
-  return { ok: true, file: "sketch.hex", seconds, ...size };
+  return { ok: true, file: `sketch.${ext}`, seconds, ...size };
 }
 
 /** Flash use from arduino-cli's compile output (AVR's "Sketch uses …" line, or Teensy's "FLASH: …" line). */
