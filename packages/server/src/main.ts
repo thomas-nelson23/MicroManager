@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { WebSocketServer } from "ws";
+import { build } from "./builds.ts";
 import { interrupt, newConversation, sendMessage } from "./chat.ts";
 import { config } from "./config.ts";
 import { hubFor } from "./hub.ts";
@@ -118,6 +119,24 @@ app.get("/api/projects/:id/upload/:file", async (c) => {
   const type = RAW_TYPES[path.extname(file).toLowerCase()];
   if (!/^[\w.-]+$/.test(file) || !type) return c.json({ error: "not found" }, 404);
   return c.body(await fs.readFile(path.join(projectDir(id), "uploads", file)), 200, { "content-type": type, "cache-control": "private, max-age=86400" });
+});
+
+/** Build the project as it is, without Claude: for a rebuild after a board or display switch, or a retry. */
+const building = new Set<string>();
+app.post("/api/projects/:id/builds", async (c) => {
+  const id = c.req.param("id");
+  await readMeta(id);
+  const body = await c.req.json().catch(() => ({}));
+  const target = body.target === "sketch" || body.target === "screen" ? body.target : "both";
+  if (hubFor(id).busy || building.has(id)) return c.json({ error: "A build or Claude is already running for this project; try again when it's done" }, 409);
+  building.add(id);
+  try {
+    const rec = await build(id, target, typeof body.label === "string" && body.label ? body.label : "rebuild");
+    return c.json(rec);
+  } finally {
+    building.delete(id);
+    hubFor(id).broadcast({ type: "project_changed" });
+  }
 });
 
 app.post("/api/projects/:id/builds/:n/flashed", async (c) => {

@@ -19,8 +19,7 @@ Every tool call re-sends the whole conversation, so use as few as you can:
 
 ```
 project.json        title, description, board, display. You may update "title" and "description"; leave the rest.
-wiring.json         the wiring as data, one connection per line:
-                    {"connections": [{"pin": "D4", "part": "IR receiver", "partPin": "OUT", "color": "yellow"}]}
+wiring.json         the wiring as data. Change it with the `wire` tool, not Read/Edit.
 hardware.md         hardware notes that don't fit wiring.json (voltages, part numbers). No pin table.
 sketch/sketch.ino   the Arduino sketch (folder and main file keep these names); more files beside it.
                     sketch/NexPass.h is the passthrough library: don't edit it.
@@ -34,7 +33,7 @@ uploads/            pictures the person attached; their message names them: Read
 ## Rules for every sketch
 
 - Talk to the display only through NexPass: `#include "NexPass.h"`, `NexPass.begin(Serial1)` in setup()
-  (or the port wiring.json uses), `NexPass.poll()` at the top of loop(), `NexPass.send("t0.txt=\"hi\"")`,
+  (or the port the display is wired to), `NexPass.poll()` at the top of loop(), `NexPass.send("t0.txt=\"hi\"")`,
   `NexPass.available()` / `NexPass.read()` for what the display sends. Never use Serial1 or USB Serial
   directly, and no Serial.print debugging: NexPass owns both lines, that's how the browser reaches the display.
 - loop() never blocks (no delay() over ~50 ms, no waiting loops). Use millis() timers.
@@ -43,16 +42,16 @@ uploads/            pictures the person attached; their message names them: Read
 - Name pins with constants (`const int IR_PIN = 4;`) so the page can match the sketch to the wiring.
 - Libraries: `install_library` with the exact Arduino index name, then build. Prefer well-known ones.
 
-## Wiring: wiring.json
+## Wiring
 
-- One entry per wire, power and ground too. `pin` is as printed on the board (Nano Every `D2`..`D13`,
-  `A0`..`A7`, `TX1`, `RX1`, `5V`, `3V3`, `GND`, `VIN`; Teensy 4.1 `0`..`41`, `VIN`, `3V3`, `GND`). `part` is
-  a short name, the same for all its wires; `partPin` the pin on the part. `color` optional. Add
-  `"signal": "5V"` where a part drives 5 V into a board pin.
-- Update wiring.json together with the sketch, and say what else a part needs (resistor, library, supply).
-- No wiring.json yet (older project): create it from the table in hardware.md, then remove that table.
-- When the person switches board or display on the project page, adapt pins, ports, wiring.json and
-  hardware.md; for a new resolution move and resize components, and drop `model`/`ser` from element 0.
+- When a sketch change adds, moves or removes a part, call `wire` once in the same step as the sketch
+  Edit. Don't Read or Edit wiring.json: `wire` returns the wiring and any problems the app found.
+- One wire per entry, power and ground too. `pin` as printed on the board (Nano Every `D2`..`D13`,
+  `A0`..`A7`, `TX1`, `RX1`, `5V`, `3V3`, `GND`, `VIN`; Teensy 4.1 `0`..`41`, `VIN`, `3V3`, `GND`). `part` is a
+  short name, the same for all its wires; `partPin` the pin on the part.
+- Say in a few words what else a part needs (resistor, library, supply).
+- A board or display switch is handled by the app: it renames the wiring's pins and scales the screen
+  to the new resolution. Don't redo that; only fix what the person asks or what a build reports.
 
 ## Workflow
 
@@ -125,6 +124,6 @@ Arduino Nano Every: ATmega4809, 5 V logic, 48 KB flash, 6 KB RAM. Mind RAM: stri
 ### board: teensy:avr:teensy41
 Teensy 4.1: 600 MHz Cortex-M7, 8 MB flash, 1 MB RAM, cheap `float`/`double`. **3.3 V logic, pins are not
 5 V tolerant**: never wire a 5 V output straight to a pin; say so, and put a level shifter or divider in
-wiring.json and hardware.md. Serial1..Serial8 (Serial1 = pins 0 RX / 1 TX). analogRead is 10-bit by default
+the wiring. Serial1..Serial8 (Serial1 = pins 0 RX / 1 TX). analogRead is 10-bit by default
 (`analogReadResolution(12)`), `analogWriteResolution()` for PWM. Teensyduino ships many libraries (Wire, SPI,
 Servo, Encoder, OneWire, FastLED, Audio): build before installing one, an installed copy can shadow them.

@@ -4,7 +4,8 @@ import path from "node:path";
 import { type Board, boardById, boardByFqbn } from "./boards.ts";
 import { config, projectsDir } from "./config.ts";
 import { type DisplayModel, displayByModel } from "./displays.ts";
-import { parseWiring, type Wiring, wiringFromHardwareMd } from "./wiring.ts";
+import { retargetHmi } from "./hmi-compact.ts";
+import { formatWiring, parseWiring, remapWiring, stripHardwareTable, type Wiring, wiringFromHardwareMd } from "./wiring.ts";
 
 export interface ProjectMeta {
   id: string;
@@ -143,24 +144,49 @@ export async function setBoard(meta: ProjectMeta, board: Board): Promise<void> {
     old ? fs.readFile(boardFile(old, "wiring.json"), "utf8").catch(() => null) : null,
   ]);
   if (curW !== null ? curW === oldW : !cur.trim() || cur === oldTpl) await fs.copyFile(boardFile(board, "wiring.json"), wj);
+  else if (curW !== null && old) {
+    // A customised wiring keeps its parts; the pins are renamed for the new board here, not by Claude.
+    const { wiring, error } = parseWiring(curW);
+    if (!error) await fs.writeFile(wj, formatWiring(remapWiring(wiring, old, board)));
+  }
   await fs.copyFile(path.join(config.serverRoot, "template", "sketch", "NexPass.h"), path.join(dir, "sketch", "NexPass.h"));
   meta.board = { fqbn: board.fqbn, name: board.name };
   await writeMeta(meta);
 }
 
-/** Switch a project to another display. The screen's layout is left alone: Claude adapts it when asked. */
+/**
+ * Switch a project to another display. The screen is carried over here, not by Claude: positions and
+ * sizes are scaled to the new resolution, and the old model is dropped from the settings line.
+ */
 export async function setDisplay(meta: ProjectMeta, display: DisplayModel): Promise<void> {
+  const hmi = path.join(projectDir(meta.id), "nextion", "hmi.txt");
+  const cur = await fs.readFile(hmi, "utf8").catch(() => null);
+  if (cur !== null) {
+    const next = retargetHmi(cur, meta.display, display);
+    if (next !== cur) await fs.writeFile(hmi, next);
+  }
   meta.display = toMetaDisplay(display);
   await writeMeta(meta);
 }
 
-/** The project's wiring: wiring.json, or for older projects the table in hardware.md. */
+/**
+ * The project's wiring, from wiring.json. An older project, whose wiring is a table in hardware.md,
+ * is converted on first read (the table moves into wiring.json), so Claude never has to do it.
+ */
 export async function readWiring(id: string): Promise<{ wiring: Wiring; source: "file" | "hardware.md"; error?: string }> {
   const dir = projectDir(id);
   const text = await fs.readFile(path.join(dir, "wiring.json"), "utf8").catch(() => null);
   if (text !== null) return { ...parseWiring(text), source: "file" };
   const md = await fs.readFile(path.join(dir, "hardware.md"), "utf8").catch(() => "");
-  return { wiring: wiringFromHardwareMd(md), source: "hardware.md" };
+  const wiring = wiringFromHardwareMd(md);
+  await fs.writeFile(path.join(dir, "wiring.json"), formatWiring(wiring));
+  if (wiring.connections.length) await fs.writeFile(path.join(dir, "hardware.md"), stripHardwareTable(md));
+  return { wiring, source: "file" };
+}
+
+/** Write the project's wiring. */
+export async function writeWiring(id: string, wiring: Wiring): Promise<void> {
+  await fs.writeFile(path.join(projectDir(id), "wiring.json"), formatWiring(wiring));
 }
 
 export interface ProjectSummary extends ProjectMeta {

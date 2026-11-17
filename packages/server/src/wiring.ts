@@ -2,7 +2,7 @@
  * A project's wiring as data (wiring.json), and the checks the page runs on it. Pure functions,
  * shared with the web UI.
  */
-import { type Board, type BoardPin, findPins, type PinCap } from "./boards.ts";
+import { type Board, type BoardPin, findPins, type PinCap, pinToken } from "./boards.ts";
 
 export interface Connection {
   /** Board pin, as printed on the board ("D4", "TX1", "5V"). */
@@ -59,6 +59,60 @@ export function parseWiring(text: string): { wiring: Wiring; error?: string } {
     connections.push(c);
   }
   return { wiring: { connections } };
+}
+
+/** wiring.json text, one connection per line. */
+export function formatWiring(w: Wiring): string {
+  const line = (c: Connection) => `    {${Object.entries(c).map(([k, v]) => `${JSON.stringify(k)}: ${JSON.stringify(v)}`).join(", ")}}`;
+  return w.connections.length ? `{\n  "connections": [\n${w.connections.map(line).join(",\n")}\n  ]\n}\n` : '{"connections": []}\n';
+}
+
+/** The wiring as a few words per wire, for a tool reply: "D4 IR receiver OUT". */
+export const wiringLines = (w: Wiring) => w.connections.map((c) => [c.pin, c.part, c.partPin].filter(Boolean).join(" ")).join("; ") || "no wires";
+
+const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/**
+ * Change a wiring: drop every wire of the parts (or on the board pins) named in `remove`, then add
+ * the wires in `set`. A wire in `set` replaces that part's wire with the same part pin.
+ */
+export function applyWiring(w: Wiring, change: { set?: Connection[]; remove?: string[] }): Wiring {
+  let connections = w.connections.filter((c) => !(change.remove ?? []).some((r) => same(r, c.part) || pinToken(r) === pinToken(c.pin)));
+  for (const n of change.set ?? []) {
+    connections = connections.filter((c) => !(same(c.part, n.part) && same(c.partPin ?? "", n.partPin ?? "")));
+    connections.push(n);
+  }
+  return { connections };
+}
+
+/** Rename a wiring's pins for another board (D4 -> 4, A0 -> 14, 5V -> VIN). Pins the new board lacks are kept, and the checks flag them. */
+export function remapWiring(w: Wiring, from: Board, to: Board): Wiring {
+  return {
+    connections: w.connections.map((c) => {
+      const old = from.pins[findPins(from, c.pin)[0] ?? -1];
+      const names = old ? [old.name, ...(old.aliases ?? [])] : [c.pin];
+      // a 5 V supply pin stays a 5 V supply pin, whatever it is called
+      if (old?.kind === "power" && names.some((n) => /^5V$/i.test(n))) names.unshift("5V");
+      for (const n of names) {
+        const hit = to.pins[findPins(to, n)[0] ?? -1];
+        if (hit && (!old || hit.kind === old.kind)) return { ...c, pin: hit.name };
+      }
+      return c;
+    }),
+  };
+}
+
+/** hardware.md without its "| Pin | Goes to |" table (the wiring now lives in wiring.json). */
+export function stripHardwareTable(md: string): string {
+  const out: string[] = [];
+  let dropped = false;
+  for (const l of md.split("\n")) {
+    if (/^\s*\|/.test(l)) {
+      if (!dropped) out.push("The connections are in wiring.json.");
+      dropped = true;
+    } else out.push(l);
+  }
+  return out.join("\n").replace(/\n{3,}/g, "\n\n");
 }
 
 /** Read the "| Pin | Goes to |" table of an older project's hardware.md as wiring. */
