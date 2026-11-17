@@ -1,7 +1,8 @@
 /**
  * The USB device on this computer: choosing the port, flashing builds and sending display commands.
  * One operation at a time. The display always goes through Web Serial (the sketch's NexPass); sketches
- * go to a Nano Every over Web Serial (UPDI) and to a Teensy over WebHID (its HalfKay bootloader).
+ * go to a Nano Every over Web Serial (UPDI), to a Teensy over WebHID (its HalfKay bootloader) and to an
+ * RP2040 as a UF2 file copied onto its BOOTSEL drive (File System Access).
  */
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -9,8 +10,11 @@ import {
   flashNanoEvery,
   flashTeensy,
   openDisplay,
+  checkUf2,
   parseIntelHex,
   resetBoard,
+  RP2040_VIDS,
+  rp2040EnterBootloader,
   sleep,
   TEENSY_VID,
   teensyEnterBootloader,
@@ -20,10 +24,15 @@ import {
 } from "@nextion-arduino/flasher";
 import { WebSerialTransport } from "@nextion-arduino/flasher/web";
 import { WebHidHalfKay } from "@nextion-arduino/flasher/web-hid";
+import { canWriteDrives, Uf2Drive } from "@nextion-arduino/flasher/web-uf2";
 
 /** How the current project's board is flashed (from its FQBN). */
-export type BoardKind = "nano-every" | "teensy";
-export const boardKind = (fqbn: string): BoardKind => (fqbn.startsWith("teensy:") ? "teensy" : "nano-every");
+export type BoardKind = "nano-every" | "teensy" | "rp2040";
+export const boardKind = (fqbn: string): BoardKind => (fqbn.startsWith("teensy:") ? "teensy" : fqbn.startsWith("rp2040:") ? "rp2040" : "nano-every");
+
+/** The flash is waiting for a click: to allow the Teensy bootloader, or to pick the Pico's drive (with the .uf2 to copy by hand instead). */
+export type BootloaderPrompt = { kind: "teensy" } | { kind: "rp2040"; fileUrl: string };
+type DriveChoice = Uf2Drive | "manual" | Error | null;
 
 export interface FlashJob {
   sketchUrl?: string;
@@ -52,13 +61,15 @@ interface Device {
   display: DisplayInfo | null;
   busy: Progress | null;
   board: BoardKind;
-  /** The Teensy is waiting in its bootloader for the person to allow it (WebHID needs a click). */
-  bootloaderPrompt: boolean;
+  /** The board is waiting in its bootloader for the person (WebHID and drive access need a click). */
+  bootloaderPrompt: BootloaderPrompt | null;
   setBoard(kind: BoardKind): void;
   choosePort(): Promise<boolean>;
   /** Choose the port if none is chosen yet. False if flashing can't go ahead. */
   ensurePort(): Promise<boolean>;
   allowBootloader(): Promise<void>;
+  /** The person copied the .uf2 onto the drive themselves. */
+  copiedByHand(): void;
   cancelBootloader(): void;
   flash(job: FlashJob): Promise<{ status: "done" | "failed"; message: string }>;
   run(commands: string[], listenSeconds?: number): Promise<{ results: CommandResult[]; events: unknown[] }>;
@@ -74,20 +85,25 @@ const SERIAL_FILTERS: SerialPortFilter[] = [
   { usbVendorId: 0x0403 },
   { usbVendorId: 0x10c4 },
   { usbVendorId: TEENSY_VID },
+  ...RP2040_VIDS.map((usbVendorId) => ({ usbVendorId })),
 ];
 
-const isTeensyPort = (p: SerialPort) => p.getInfo().usbVendorId === TEENSY_VID;
+/** Boards whose USB serial is part of the sketch, so it is a new port after every reboot. */
+const isRebootingPort = (p: SerialPort) => [TEENSY_VID, ...RP2040_VIDS].includes(p.getInfo().usbVendorId ?? -1);
+const vidsFor = (kind: BoardKind) => (kind === "rp2040" ? RP2040_VIDS : [TEENSY_VID]);
 
 function label(p: SerialPort): string {
   const i = p.getInfo();
   if (i.usbVendorId === 0x2341 && i.usbProductId === 0x0058) return "Arduino Nano Every";
   if (i.usbVendorId === 0x2341) return "Arduino";
   if (i.usbVendorId === TEENSY_VID) return "Teensy";
+  if (i.usbVendorId === 0x2e8a) return "Raspberry Pi Pico";
+  if (i.usbVendorId === 0x239a) return "Adafruit RP2040";
   return i.usbVendorId ? `USB ${i.usbVendorId.toString(16)}:${i.usbProductId?.toString(16)}` : "Serial port";
 }
 
-/** Wait for a Teensy's USB serial to come back after a reboot (it is a new port each time). */
-function waitForTeensyPort(ms: number): Promise<SerialPort | null> {
+/** Wait for a Teensy's or Pico's USB serial to come back after a reboot (it is a new port each time). */
+function waitForBoardPort(vids: number[], ms: number): Promise<SerialPort | null> {
   return new Promise((resolve) => {
     let done = false;
     const finish = (p: SerialPort | null) => {
@@ -100,14 +116,14 @@ function waitForTeensyPort(ms: number): Promise<SerialPort | null> {
     };
     const onConnect = (e: Event) => {
       const p = e.target as SerialPort;
-      if (isTeensyPort(p)) finish(p);
+      if (vids.includes(p.getInfo().usbVendorId ?? -1)) finish(p);
     };
     navigator.serial.addEventListener("connect", onConnect);
     // Chrome may also hand back the same object; poll once the old one has had time to go away.
     const started = Date.now();
     const poll = setInterval(async () => {
       if (Date.now() - started < 1500) return;
-      const p = (await navigator.serial.getPorts()).find((x) => isTeensyPort(x) && x.connected !== false);
+      const p = (await navigator.serial.getPorts()).find((x) => vids.includes(x.getInfo().usbVendorId ?? -1) && x.connected !== false);
       if (p) finish(p);
     }, 300);
     const timer = setTimeout(() => finish(null), ms);
@@ -121,15 +137,16 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
   const [display, setDisplay] = useState<DisplayInfo | null>(null);
   const [busy, setBusy] = useState<Progress | null>(null);
   const [board, setBoardState] = useState<BoardKind>("nano-every");
-  const [bootloaderPrompt, setBootloaderPrompt] = useState(false);
+  const [bootloaderPrompt, setBootloaderPrompt] = useState<BootloaderPrompt | null>(null);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const tRef = useRef<WebSerialTransport | null>(null);
   tRef.current = transport;
   const boardRef = useRef<BoardKind>(board);
   boardRef.current = board;
-  /** A Teensy reboot is in progress: its port disappearing is expected. */
+  /** A Teensy or Pico reboot is in progress: its port disappearing is expected. */
   const rebooting = useRef(false);
   const promptRef = useRef<((hk: WebHidHalfKay | null) => void) | null>(null);
+  const drivePromptRef = useRef<((d: DriveChoice) => void) | null>(null);
 
   useEffect(() => {
     if (!supported) return;
@@ -143,10 +160,10 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
         setDisplay(null);
       }
     };
-    // A Teensy plugged back in (or rebooted outside an operation) is a new port: adopt it.
+    // A Teensy or Pico plugged back in (or rebooted outside an operation) is a new port: adopt it.
     const onConnect = (e: Event) => {
       const p = e.target as SerialPort;
-      if (!rebooting.current && !tRef.current && isTeensyPort(p)) setTransport(new WebSerialTransport(p));
+      if (!rebooting.current && !tRef.current && isRebootingPort(p)) setTransport(new WebSerialTransport(p));
     };
     navigator.serial.addEventListener("disconnect", onDisconnect);
     navigator.serial.addEventListener("connect", onConnect);
@@ -174,9 +191,9 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
     return p;
   }, []);
 
-  /** After a Teensy reboot, point the transport at its new port (or create one). */
-  const rebindTeensy = useCallback(async (t: WebSerialTransport | null): Promise<WebSerialTransport | null> => {
-    const p = await waitForTeensyPort(8000);
+  /** After a Teensy or Pico reboot, point the transport at its new port (or create one). */
+  const rebindPort = useCallback(async (t: WebSerialTransport | null, vids: number[]): Promise<WebSerialTransport | null> => {
+    const p = await waitForBoardPort(vids, 8000);
     if (!p) return null;
     if (t) {
       await t.close().catch(() => {});
@@ -193,13 +210,14 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
     (kind: BoardKind) =>
       async (port: SerialTransport): Promise<void> => {
         if (kind === "nano-every") return resetBoard(port);
+        // Teensy and RP2040: NexPass reboots the board when DTR drops after a TFT upload.
         rebooting.current = true;
         await teensyRestart(port);
-        if (port instanceof WebSerialTransport) await rebindTeensy(port);
+        if (port instanceof WebSerialTransport) await rebindPort(port, vidsFor(kind));
         rebooting.current = false;
         await sleep(1000); // let the sketch open the display port
       },
-    [rebindTeensy],
+    [rebindPort],
   );
 
   const choosePort = useCallback(async () => {
@@ -215,25 +233,39 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
     }
   }, [supported]);
 
-  // A Teensy can be flashed without a serial port (blank board, or one held in its bootloader).
-  const ensurePort = useCallback(async () => !!tRef.current || (await choosePort()) || boardRef.current === "teensy", [choosePort]);
+  // A Teensy or Pico can be flashed without a serial port (blank board, or one held in its bootloader).
+  const ensurePort = useCallback(async () => !!tRef.current || (await choosePort()) || boardRef.current !== "nano-every", [choosePort]);
+
+  const answerDrive = useCallback((d: DriveChoice) => {
+    setBootloaderPrompt(null);
+    drivePromptRef.current?.(d);
+    drivePromptRef.current = null;
+  }, []);
 
   const allowBootloader = useCallback(async () => {
+    if (drivePromptRef.current) {
+      answerDrive(await Uf2Drive.pick().catch((e: unknown) => (e instanceof DOMException && e.name === "AbortError" ? null : e instanceof Error ? e : new Error(String(e)))));
+      return;
+    }
     let hk: WebHidHalfKay | null = null;
     try {
       hk = await WebHidHalfKay.request();
     } catch {
       hk = null;
     }
-    setBootloaderPrompt(false);
+    setBootloaderPrompt(null);
     promptRef.current?.(hk);
     promptRef.current = null;
-  }, []);
+  }, [answerDrive]);
+
+  const copiedByHand = useCallback(() => answerDrive("manual"), [answerDrive]);
 
   const cancelBootloader = useCallback(() => {
-    setBootloaderPrompt(false);
+    setBootloaderPrompt(null);
     promptRef.current?.(null);
     promptRef.current = null;
+    drivePromptRef.current?.(null);
+    drivePromptRef.current = null;
   }, []);
 
   /** Get the Teensy into HalfKay and return it, asking the person to allow it the first time. */
@@ -258,11 +290,38 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
       setBusy({ label: "Waiting for you to allow the Teensy bootloader" });
       hk = await new Promise<WebHidHalfKay | null>((resolve) => {
         promptRef.current = resolve;
-        setBootloaderPrompt(true);
+        setBootloaderPrompt({ kind: "teensy" });
       });
       if (!hk) throw new Error("the Teensy bootloader wasn't allowed. If it doesn't show up in the list, press the button on the Teensy and try again");
     }
     return hk;
+  }, []);
+
+  /** Get the Pico into BOOTSEL and copy the UF2 onto its drive, asking the person to pick the drive when needed. */
+  const flashPico = useCallback(async (t: WebSerialTransport | null, uf2: Uint8Array, fileUrl: string) => {
+    if (t) {
+      setBusy({ label: "Restarting the board into BOOTSEL" });
+      rebooting.current = true;
+      await rp2040EnterBootloader(t).catch(() => {});
+    }
+    let choice: DriveChoice = null;
+    if (canWriteDrives()) {
+      setBusy({ label: "Waiting for the RPI-RP2 drive" });
+      choice = await Uf2Drive.remembered(t ? 8000 : 1500);
+    }
+    if (!choice) {
+      setBusy({ label: "Waiting for you to choose the RPI-RP2 drive" });
+      choice = await new Promise<DriveChoice>((resolve) => {
+        drivePromptRef.current = resolve;
+        setBootloaderPrompt({ kind: "rp2040", fileUrl });
+      });
+    }
+    if (choice instanceof Error) throw choice;
+    if (!choice) throw new Error("the RPI-RP2 drive wasn't chosen. If it doesn't show up, hold the board's BOOT (BOOTSEL) button while plugging it in or pressing reset, and try again");
+    if (choice !== "manual") {
+      setBusy({ label: "Copying the sketch to the board" });
+      await choice.write(uf2);
+    }
   }, []);
 
   const flash = useCallback(
@@ -272,17 +331,29 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
         const kind = boardRef.current;
         try {
           if (job.sketchUrl) {
+            // While still inside the Flash click, renew access to the Pico drive picked on an earlier visit.
+            if (kind === "rp2040" && navigator.userActivation?.isActive) await Uf2Drive.renew();
             setBusy({ label: "Downloading sketch" });
             const r = await fetch(job.sketchUrl);
             if (!r.ok) throw new Error("couldn't download the sketch");
-            const img = parseIntelHex(await r.text());
+            const bytes = new Uint8Array(await r.arrayBuffer());
             const progress = (p: { stage: string; done?: number; total?: number }) =>
               setBusy({
                 label: p.stage === "write" ? "Writing sketch" : p.stage === "verify" ? "Verifying sketch" : p.stage === "erase" ? "Erasing flash" : `Sketch: ${p.stage}`,
                 done: p.done,
                 total: p.total,
               });
-            if (kind === "teensy") {
+            if (kind === "rp2040") {
+              checkUf2(bytes);
+              await flashPico(t, bytes, job.sketchUrl);
+              setBusy({ label: "Waiting for the sketch to start" });
+              rebooting.current = true;
+              t = await rebindPort(t, RP2040_VIDS);
+              rebooting.current = false;
+              if (!t && job.screenUrl) throw new Error("the sketch was copied to the board, but its USB serial port didn't come back, so the screen wasn't uploaded");
+              await sleep(1000);
+            } else if (kind === "teensy") {
+              const img = parseIntelHex(new TextDecoder().decode(bytes));
               const hk = await halfKay(t);
               await hk.open();
               try {
@@ -292,13 +363,13 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
               }
               setBusy({ label: "Waiting for the sketch to start" });
               rebooting.current = true;
-              t = await rebindTeensy(t);
+              t = await rebindPort(t, [TEENSY_VID]);
               rebooting.current = false;
               if (!t && job.screenUrl) throw new Error("the sketch is flashed, but its USB serial port didn't come back, so the screen wasn't uploaded");
               await sleep(1000);
             } else {
               if (!t) throw new Error("No device connected. Choose the board's port first.");
-              await flashNanoEvery(t, img, progress);
+              await flashNanoEvery(t, parseIntelHex(new TextDecoder().decode(bytes)), progress);
               await sleep(1500); // let the sketch boot
             }
           }
@@ -316,7 +387,7 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
             }
             await nex.uploadTft(tft, { progress: (p) => setBusy({ label: "Uploading screen", done: p.done, total: p.total }) });
             setBusy({ label: "Restarting the board" });
-            if (kind === "teensy") await restartFor(kind)(t);
+            if (kind !== "nano-every") await restartFor(kind)(t);
             else {
               await t.close();
               await resetBoard(t);
@@ -327,8 +398,8 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
         } catch (e) {
           return { status: "failed" as const, message: e instanceof Error ? e.message : String(e) };
         }
-      }, boardRef.current !== "teensy" || !!job.screenUrl),
-    [exclusive, halfKay, rebindTeensy, restartFor],
+      }, boardRef.current === "nano-every" || !!job.screenUrl),
+    [exclusive, halfKay, flashPico, rebindPort, restartFor],
   );
 
   const run = useCallback(
@@ -368,11 +439,12 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
       choosePort,
       ensurePort,
       allowBootloader,
+      copiedByHand,
       cancelBootloader,
       flash,
       run,
     }),
-    [supported, insecure, transport, display, busy, board, bootloaderPrompt, setBoard, choosePort, ensurePort, allowBootloader, cancelBootloader, flash, run],
+    [supported, insecure, transport, display, busy, board, bootloaderPrompt, setBoard, choosePort, ensurePort, allowBootloader, copiedByHand, cancelBootloader, flash, run],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

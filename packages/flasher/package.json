@@ -3,12 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Flash Arduino and Teensy boards and upload Nextion TFTs (Web Serial / WebHID in the browser, serialport in Node).",
+  "description": "Flash Arduino, Teensy and RP2040 boards and upload Nextion TFTs (Web Serial / WebHID / File System Access in the browser, serialport in Node).",
   "exports": {
     ".": "./src/index.ts",
     "./node": "./src/node-transport.ts",
     "./web": "./src/web-transport.ts",
-    "./web-hid": "./src/web-hid.ts"
+    "./web-hid": "./src/web-hid.ts",
+    "./web-uf2": "./src/web-uf2.ts"
   },
   "scripts": {
     "test": "vitest run",

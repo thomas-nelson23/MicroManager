@@ -7,11 +7,15 @@ import { readFileSync } from "node:fs";
 
 const nano = boardById("nano-every")!;
 const teensy = boardById("teensy41")!;
+const pico = boardById("pico")!;
+const propMaker = boardById("feather-rp2040-prop-maker")!;
 
 describe("boards", () => {
   it("has the real pin counts", () => {
     expect(nano.pins).toHaveLength(30);
     expect(teensy.pins).toHaveLength(48);
+    expect(pico.pins).toHaveLength(40);
+    expect(propMaker.pins).toHaveLength(28);
   });
   it("finds pins by name, alias and hint", () => {
     expect(nano.pins[findPins(nano, "d4")[0]!]!.name).toBe("D4");
@@ -20,10 +24,17 @@ describe("boards", () => {
     expect(findPins(nano, "GND")).toHaveLength(2);
     expect(findPins(nano, "D99")).toEqual([]);
     expect(teensy.pins[findPins(teensy, "A0")[0]!]!.name).toBe("14");
+    expect(pico.pins[findPins(pico, "A0")[0]!]!.name).toBe("GP26");
+    expect(pico.pins[findPins(pico, "4")[0]!]!.role).toBe("SDA");
+    expect(findPins(pico, "GND")).toHaveLength(7);
+    expect(propMaker.pins[findPins(propMaker, "0")[0]!]!.name).toBe("TX");
+    expect(propMaker.pins[findPins(propMaker, "26")[0]!]!.name).toBe("A0");
   });
   it("recognises boards by USB id", () => {
     expect(boardByUsb(0x2341, 0x0058)?.id).toBe("nano-every");
     expect(boardByUsb(0x16c0, 0x0483)?.id).toBe("teensy41");
+    expect(boardByUsb(0x2e8a, 0x000a)?.id).toBe("pico");
+    expect(boardByUsb(0x239a, 0x8131)?.id).toBe("feather-rp2040-prop-maker");
     expect(boardByUsb(0x1234, 1)).toBeUndefined();
     expect(boardByUsb()).toBeUndefined();
   });
@@ -111,6 +122,7 @@ describe("checkWiring", () => {
   it("flags 5 V signals into a Teensy only", () => {
     const w = { connections: [{ pin: "2", part: "Sensor", partPin: "OUT", signal: "5V" }] };
     expect(texts(checkWiring(teensy, w))).toMatch(/not 5 V tolerant/);
+    expect(texts(checkWiring(pico, { connections: [{ ...w.connections[0]!, pin: "GP2" }] }))).toMatch(/not 5 V tolerant/);
     expect(checkWiring(nano, w)).toEqual([]);
   });
   it("compares the wiring with the sketch", () => {

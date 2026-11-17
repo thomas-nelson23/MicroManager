@@ -506,12 +506,35 @@ function StatusStrip({ detail, project, flasher, ask, toChat, navigate, onBuilds
 }
 
 /**
- * WebHID can only be granted from a click. When the chooser couldn't open inside the Flash click,
- * the flash waits here: a modal, because a corner toast was easy to miss while the Teensy sat in
- * its bootloader with the LED red.
+ * WebHID and drive access can only be granted from a click. When that couldn't happen inside the
+ * Flash click, the flash waits here: a modal, because a corner toast was easy to miss while the board
+ * sat in its bootloader.
  */
 function BootloaderPrompt() {
   const device = useDevice();
+  const prompt = device.bootloaderPrompt;
+  if (prompt?.kind === "rp2040") {
+    return (
+      <div className="scrim">
+        <div className="dialog app-dialog" role="alertdialog" aria-modal="true" aria-label="Choose the RPI-RP2 drive">
+          <h2 className="h3">Choose the RPI-RP2 drive</h2>
+          <div className="dialog-body">
+            <p>The board is in BOOTSEL mode and shows up as a USB drive called RPI-RP2. Chrome needs your OK before this page can copy the sketch onto it.</p>
+            <p>Click <b>Choose drive and flash</b>, pick RPI-RP2, then allow Chrome to edit it. If the drive isn't there, give it a moment, or hold the BOOT (BOOTSEL) button while plugging the board in or pressing reset.</p>
+            <p>Or <a href={prompt.fileUrl} download="sketch.uf2">download the .uf2</a>, drag it onto RPI-RP2 yourself, and click <b>I copied it</b>.</p>
+          </div>
+          <div className="actions end">
+            <button className="btn md quiet" type="button" onClick={device.cancelBootloader}>Cancel</button>
+            <button className="btn md" type="button" onClick={device.copiedByHand}>I copied it</button>
+            <button className="btn md primary" type="button" autoFocus onClick={() => void device.allowBootloader()}>
+              <Icon name="zap" />
+              Choose drive and flash
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="scrim">
       <div className="dialog app-dialog" role="alertdialog" aria-modal="true" aria-label="Allow the Teensy bootloader">
