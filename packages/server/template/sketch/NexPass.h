@@ -188,8 +188,18 @@ class NexPassClass {
   void switchBaud(long baud) {
     if (baud < 2400 || baud > 921600) return;
     disp_->flush();
+#if defined(ARDUINO_ARCH_RP2040)
+    // RP2040: end() releases the TX pin and lets the line float, which the display reads as a stray
+    // byte in the TFT data ("Data ERROR!"). Change the divider on the running UART instead.
+#ifdef __SERIAL1_DEVICE
+    uart_set_baudrate(disp_ == &Serial1 ? __SERIAL1_DEVICE : __SERIAL2_DEVICE, baud);
+#else
+    uart_set_baudrate(disp_ == &Serial1 ? uart0 : uart1, baud);
+#endif
+#else
     disp_->end();
     disp_->begin(baud);
+#endif
   }
 
   // Raw transfer for a TFT upload: never returns. The host restarts the board afterwards.
