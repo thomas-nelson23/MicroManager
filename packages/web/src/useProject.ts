@@ -90,7 +90,7 @@ export function useProject(id: string) {
     connected,
     reload,
     /** False when the message could not be sent (no connection): keep the draft. */
-    sendText: (text: string, images?: { name: string; dataUrl: string }[]) => send({ type: "send", text, ...(images?.length ? { images } : {}) }),
+    sendText: (text: string, images?: { name: string; dataUrl: string }[], strong?: boolean) => send({ type: "send", text, ...(images?.length ? { images } : {}), ...(strong ? { strong } : {}) }),
     interrupt: () => send({ type: "interrupt" }),
     flashResult: (eventId: string, status: "done" | "failed" | "skipped", message?: string) => send({ type: "flash_result", id: eventId, status, message }),
   };

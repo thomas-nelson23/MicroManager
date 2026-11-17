@@ -17,7 +17,13 @@ export const config = {
   /** The app's HTTPS address, if it has one: shown to people who open it over plain HTTP, where browsers block USB. */
   publicUrl: env.PUBLIC_URL ?? "",
 
-  claudeModel: env.CLAUDE_MODEL ?? "claude-opus-5-5",
+  /** Model for everyday chat turns. */
+  chatModel: env.CLAUDE_CHAT_MODEL ?? "claude-sonnet-5-5",
+  /** Model for a message sent with "Think harder" (CLAUDE_MODEL kept its old name so existing setups keep working). */
+  strongModel: env.CLAUDE_MODEL ?? "claude-opus-5-5",
+  /** Start a fresh Claude conversation after this many idle minutes, or once the context passes CHAT_MAX_CONTEXT tokens. */
+  freshAfterMinutes: Number(env.CHAT_FRESH_AFTER_MIN ?? 120),
+  maxContextTokens: Number(env.CHAT_MAX_CONTEXT ?? 60000),
   /** Reasoning effort for the chat: low, medium, high, xhigh or max. */
   claudeEffort: (env.CLAUDE_EFFORT ?? "medium") as "low" | "medium" | "high" | "xhigh" | "max",
   /** Let Claude run shell commands inside the project folder (sensible inside the container only). */
