@@ -5,6 +5,8 @@
 unsigned long fakeMillis = 100000;
 HardwareSerial Serial;
 HardwareSerial Serial1;
+bool escapeWhenIdle = false;
+jmp_buf passthroughEscape;
 
 static int failures = 0;
 static std::string hex(const std::string &s) {
@@ -114,6 +116,29 @@ int main() {
   NexPass.poll();
   expect("long request", Serial.out, "\xA5request too long" + E + "\xA6" + E);
   expect("long request not sent to display", Serial1.out, "");
+
+  // "@nexpass" is answered by NexPass itself, not the sketch's handler.
+  reset();
+  lastRequest = "";
+  Serial.feed("@nexpass" + E);
+  NexPass.poll();
+  expect("version reply", Serial.out, "\xA5NexPass " NEXPASS_VERSION + E + "\xA6" + E);
+  expect("version not passed to the handler", lastRequest, "");
+
+  // `baud=` switches the display UART; a `whmi-wri` at that same baud leaves it alone.
+  reset();
+  Serial.feed("baud=115200" + E);
+  NexPass.poll();
+  expect("baud= forwarded", Serial1.out, "baud=115200" + E);
+  expect("baud= switches", std::to_string(Serial1.baud), "115200");
+  Serial1.begins = 0;
+  Serial1.ends = 0;
+  Serial.feed("whmi-wri 100,115200,0" + E);
+  escapeWhenIdle = true;
+  if (setjmp(passthroughEscape) == 0) NexPass.poll();
+  escapeWhenIdle = false;
+  expect("whmi-wri forwarded", Serial1.out, "baud=115200" + E + "whmi-wri 100,115200,0" + E);
+  expect("whmi-wri at the current baud: no reopen", std::to_string(Serial1.begins + Serial1.ends), "0");
 
   if (failures) return 1;
   std::cout << "ok\n";

@@ -73,7 +73,9 @@ Every built sketch includes it. The user's code calls `NexPass.begin(Serial1)` a
 - Normally it does nothing visible. The sketch owns the display and can also use USB Serial for itself.
 - When the host sends the Nextion upload start (`whmi-wri size,baud,0`, preceded by `connect`) on USB, the
   library takes over. It bridges USB and the display byte for byte, follows the baud change, and when the
-  transfer ends it resets the board so the sketch starts fresh.
+  transfer ends it resets the board so the sketch starts fresh. Sketches with NexPass 2 or later (they answer
+  `@nexpass`) get `baud=<upload baud>` and a fresh `connect` first, so the baud never changes once the display
+  is counting TFT bytes. The page refuses an RP2040 screen upload through an older NexPass.
 - It also bridges ordinary instructions on request, which `device_command` uses for read-back.
 - Constraint for sketches: `loop()` must not block for long. This goes in Claude's rules.
 

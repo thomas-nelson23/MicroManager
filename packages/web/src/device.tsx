@@ -468,7 +468,16 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
             if (job.expectModel && !info.model.startsWith(job.expectModel)) {
               throw new Error(`the display is a ${info.model}, but this project is built for ${job.expectModel}`);
             }
-            await nex.uploadTft(tft, { progress: (p) => setBusy({ label: "Uploading screen", done: p.done, total: p.total }) });
+            const nexpass = await nex.nexpassVersion();
+            if (kind === "rp2040" && !nexpass) {
+              throw new Error(
+                "the board's sketch was built before the RP2040 screen-upload fix, so the display would end with \"Data ERROR!\". Rebuild the sketch, flash it, then upload the screen again.",
+              );
+            }
+            await nex.uploadTft(tft, {
+              switchFirst: (nexpass ?? 0) >= 2,
+              progress: (p) => setBusy({ label: "Uploading screen", done: p.done, total: p.total }),
+            });
             setBusy({ label: "Restarting the board" });
             if (kind !== "nano-every") await restartFor(kind)(t);
             else {

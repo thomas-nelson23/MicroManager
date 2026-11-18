@@ -8,7 +8,8 @@
 // - Everything the display sends is copied to USB *and* kept for the sketch: read it with
 //   NexPass.available() / NexPass.read(), never with Serial1.read() directly.
 // - When the host starts a TFT upload (`whmi-wri size,baud,0`), NexPass switches to raw passthrough at
-//   the upload baud and stays there; the host restarts the board when the upload is done (on a Teensy
+//   the upload baud and stays there. The host sends `baud=<upload baud>` first, so nothing changes on the
+//   display line once the display starts counting TFT bytes; the host restarts the board when the upload is done (on a Teensy
 //   or an RP2040, by dropping DTR, which makes NexPass reboot the board).
 // - Works on the Arduino Nano Every, the Teensy 4.1 (any of Serial1..Serial8 for the display) and the
 //   Raspberry Pi Pico (Serial1 or Serial2).
@@ -31,12 +32,17 @@
 #pragma once
 #include <Arduino.h>
 
+// Bumped when the host needs to know about a change. The host asks with "@nexpass" (answered here,
+// never passed to the sketch's handler). 2: upload baud set with `baud=` beforehand is kept as is.
+#define NEXPASS_VERSION "2"
+
 class NexPassClass {
  public:
   void begin(HardwareSerial &display, unsigned long displayBaud = 9600, unsigned long usbBaud = 115200) {
     disp_ = &display;
     Serial.begin(usbBaud);
     disp_->begin(displayBaud);
+    baud_ = (long)displayBaud;
   }
 
   void poll() {
@@ -101,6 +107,7 @@ class NexPassClass {
   uint8_t len_ = 0, ffs_ = 0;
   unsigned long hostAt_ = 0;
   bool hostSeen_ = false;
+  long baud_ = 0;  // the display UART's current baud
 
   static const unsigned long HOST_QUIET_MS = 3000;
   bool hostBusy() const { return hostSeen_ && millis() - hostAt_ < HOST_QUIET_MS; }
@@ -122,7 +129,8 @@ class NexPassClass {
   }
 
   void request(char *text) {
-    if (onRequest_) onRequest_(text);
+    if (!strcmp(text, "nexpass")) reply("NexPass " NEXPASS_VERSION);
+    else if (onRequest_) onRequest_(text);
     else reply(F("this sketch doesn't handle requests (NexPass.onRequest)"));
     Serial.write((uint8_t)0xA6);
     term();
@@ -185,8 +193,11 @@ class NexPassClass {
 
   // Switch immediately: after `whmi-wri` the display answers 0x05 at the new baud within a few ms,
   // so any pause here can lose that acknowledgement.
+  // Nothing happens when the baud is already right: the host sends `baud=` before `whmi-wri`, so the
+  // UART isn't touched while the display is counting TFT bytes.
   void switchBaud(long baud) {
-    if (baud < 2400 || baud > 921600) return;
+    if (baud < 2400 || baud > 921600 || baud == baud_) return;
+    baud_ = baud;
     disp_->flush();
 #if defined(ARDUINO_ARCH_RP2040)
     // RP2040: end() releases the TX pin and lets the line float, which the display reads as a stray
