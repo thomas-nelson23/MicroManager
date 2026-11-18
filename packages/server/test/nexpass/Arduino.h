@@ -1,5 +1,6 @@
 // Just enough of the Arduino API to compile NexPass.h on a PC and test it (see nexpass.test.ts).
 #pragma once
+#include <csetjmp>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -10,6 +11,11 @@
 extern unsigned long fakeMillis;
 inline unsigned long millis() { return fakeMillis++; }  // time moves on every look, so waits end
 inline void delay(unsigned long ms) { fakeMillis += ms; }
+
+// NexPass's TFT passthrough never returns: with escapeWhenIdle set, the first available() call that
+// finds nothing to read jumps back to passthroughEscape.
+extern bool escapeWhenIdle;
+extern jmp_buf passthroughEscape;
 
 class __FlashStringHelper;
 #define F(s) (reinterpret_cast<const __FlashStringHelper *>(s))
@@ -42,10 +48,18 @@ class HardwareSerial : public Print {
   std::deque<uint8_t> in;  // bytes waiting to be read
   std::string out;         // bytes written
   long baud = 0;
-  void begin(unsigned long b) { baud = (long)b; }
-  void end() {}
+  int begins = 0, ends = 0;
+  void begin(unsigned long b) {
+    baud = (long)b;
+    begins++;
+  }
+  void end() { ends++; }
   void flush() {}
-  int available() { return (int)in.size(); }
+  bool dtr() { return true; }
+  int available() {
+    if (in.empty() && escapeWhenIdle) longjmp(passthroughEscape, 1);
+    return (int)in.size();
+  }
   int read() {
     if (in.empty()) return -1;
     int b = in.front();

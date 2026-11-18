@@ -151,13 +151,39 @@ export class Nextion {
   }
 
   /**
+   * The NexPass version of the running sketch ("@nexpass"), or undefined when it doesn't say: a sketch
+   * built before version 2, no NexPass at all, or a sketch that isn't calling NexPass.poll().
+   */
+  async nexpassVersion(waitMs = 1500): Promise<number | undefined> {
+    try {
+      const { lines } = await this.ask("nexpass", waitMs);
+      const m = /^NexPass (\d+)/.exec(lines[0] ?? "");
+      return m ? Number(m[1]) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
    * Upload a TFT. The display must be connected first. Chunks of 4096 bytes are each acknowledged
    * with 0x05. Writes are paced just under the line rate because the passthrough's buffers are small.
+   *
+   * With `switchFirst` (NexPass 2 and later), the display and the passthrough move to the upload baud
+   * with `baud=` and a fresh handshake before `whmi-wri`, so nothing on the line changes once the display
+   * is counting TFT bytes. A glitch from the switch then lands in an instruction the display ignores,
+   * instead of shifting the file by a byte (which the display only notices at the end: "Data ERROR!").
    */
-  async uploadTft(tft: Uint8Array, opts: { uploadBaud?: number; hostBaud?: number; progress?: Progress } = {}) {
+  async uploadTft(tft: Uint8Array, opts: { uploadBaud?: number; hostBaud?: number; switchFirst?: boolean; progress?: Progress } = {}) {
     const uploadBaud = opts.uploadBaud ?? 115200;
     const line = Math.min(opts.hostBaud ?? 115200, uploadBaud);
     const progress = opts.progress ?? (() => {});
+    if (opts.switchFirst) {
+      await this.send(`baud=${uploadBaud}`);
+      await sleep(100);
+      if (!(await this.connect())) {
+        throw new Error(`the display stopped answering after switching to ${uploadBaud} baud. Power-cycle the display and try again.`);
+      }
+    }
     this.port.rx.clear();
     await this.send(`whmi-wri ${tft.length},${uploadBaud},0`);
     await this.waitAck(3000, "display did not acknowledge whmi-wri");
