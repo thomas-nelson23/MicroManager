@@ -90,6 +90,22 @@ interface Device {
   setLive(on: boolean): void;
   log: LogEntry[];
   clearLog(): void;
+  /** Screen upload speed chosen by the person; 0 picks it by board (see autoUploadBaud). */
+  uploadBaud: number;
+  setUploadBaud(baud: number): void;
+}
+
+export const UPLOAD_BAUDS = [115200, 57600, 38400, 19200, 9600];
+/** RP2040 boards drive the display with 3.3 V, which is less forgiving at full speed than the Nano's 5 V. */
+export const autoUploadBaud = (kind: BoardKind) => (kind === "rp2040" ? 57600 : 115200);
+const UPLOAD_BAUD_KEY = "nextion-arduino.uploadBaud";
+function savedUploadBaud(): number {
+  try {
+    const v = Number(localStorage.getItem(UPLOAD_BAUD_KEY));
+    return UPLOAD_BAUDS.includes(v) ? v : 0;
+  } catch {
+    return 0;
+  }
 }
 
 const Ctx = createContext<Device | null>(null);
@@ -188,6 +204,9 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
   /** The open, handshaken display connection, reused while the port stays open (live mode). */
   const session = useRef<{ nex: Nextion; info: DisplayInfo } | null>(null);
   const [live, setLiveState] = useState(false);
+  const [uploadBaud, setUploadBaudState] = useState(savedUploadBaud);
+  const uploadBaudRef = useRef(uploadBaud);
+  uploadBaudRef.current = uploadBaud;
   const liveRef = useRef(false);
   const [log, setLog] = useState<LogEntry[]>([]);
   const logN = useRef(0);
@@ -474,7 +493,10 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
                 "the board's sketch was built before the RP2040 screen-upload fix, so the display would end with \"Data ERROR!\". Rebuild the sketch, flash it, then upload the screen again.",
               );
             }
+            const baud = uploadBaudRef.current || autoUploadBaud(kind);
+            addLog([{ dir: "note", text: `uploading the screen at ${baud} baud` }]);
             await nex.uploadTft(tft, {
+              uploadBaud: baud,
               switchFirst: (nexpass ?? 0) >= 2,
               progress: (p) => setBusy({ label: "Uploading screen", done: p.done, total: p.total }),
             });
@@ -491,7 +513,7 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
           return { status: "failed" as const, message: e instanceof Error ? e.message : String(e) };
         }
       }, boardRef.current === "nano-every" || !!job.screenUrl, false),
-    [exclusive, halfKay, flashPico, rebindPort, restartFor],
+    [exclusive, halfKay, flashPico, rebindPort, restartFor, addLog],
   );
 
   const listen = useCallback(
@@ -582,6 +604,16 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
 
   const clearLog = useCallback(() => setLog([]), []);
 
+  const setUploadBaud = useCallback((baud: number) => {
+    setUploadBaudState(baud);
+    try {
+      if (baud) localStorage.setItem(UPLOAD_BAUD_KEY, String(baud));
+      else localStorage.removeItem(UPLOAD_BAUD_KEY);
+    } catch {
+      /* not remembered, still used for now */
+    }
+  }, []);
+
   const setBoard = useCallback((kind: BoardKind) => setBoardState(kind), []);
 
   const value = useMemo<Device>(
@@ -606,8 +638,10 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
       setLive,
       log,
       clearLog,
+      uploadBaud,
+      setUploadBaud,
     }),
-    [supported, insecure, transport, display, busy, board, bootloaderPrompt, setBoard, choosePort, ensurePort, allowBootloader, copiedByHand, cancelBootloader, flash, run, live, setLive, log, clearLog],
+    [supported, insecure, transport, display, busy, board, bootloaderPrompt, setBoard, choosePort, ensurePort, allowBootloader, copiedByHand, cancelBootloader, flash, run, live, setLive, log, clearLog, uploadBaud, setUploadBaud],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
