@@ -531,6 +531,25 @@ function StatusStrip({ detail, project, flasher, ask, toChat, navigate, onBuilds
 function BootloaderPrompt() {
   const device = useDevice();
   const prompt = device.bootloaderPrompt;
+  // Once the .uf2 has been downloaded to copy by hand, the page must not write to the drive as well.
+  const [byHand, setByHand] = useState(false);
+  if (prompt?.kind === "rp2040" && byHand) {
+    return (
+      <div className="scrim">
+        <div className="dialog app-dialog" role="alertdialog" aria-modal="true" aria-label="Copy the sketch by hand">
+          <h2 className="h3">Copy the sketch by hand</h2>
+          <div className="dialog-body">
+            <p>Drag the downloaded .uf2 onto the RPI-RP2 drive. The board restarts by itself when the copy is complete, and this dialog closes then.</p>
+            <p><b>Don't unplug the board or start anything else until it does.</b> If you ejected or unplugged it mid-copy, hold BOOT (BOOTSEL) while plugging it back in and copy the file again.</p>
+          </div>
+          <div className="actions end">
+            <button className="btn md quiet" type="button" onClick={() => { setByHand(false); device.cancelBootloader(); }}>Cancel</button>
+            <button className="btn md" type="button" onClick={() => { setByHand(false); device.copiedByHand(); }}>It restarted</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
   if (prompt?.kind === "rp2040") {
     return (
       <div className="scrim">
@@ -539,11 +558,10 @@ function BootloaderPrompt() {
           <div className="dialog-body">
             <p>The board is in BOOTSEL mode and shows up as a USB drive called RPI-RP2. Chrome needs your OK before this page can copy the sketch onto it.</p>
             <p>Click <b>Choose drive and flash</b>, pick RPI-RP2, then allow Chrome to edit it. If the drive isn't there, give it a moment, or hold the BOOT (BOOTSEL) button while plugging the board in or pressing reset.</p>
-            <p>Or <a href={prompt.fileUrl} download="sketch.uf2">download the .uf2</a>, drag it onto RPI-RP2 yourself, and click <b>I copied it</b>.</p>
+            <p>Or <a href={prompt.fileUrl} download="sketch.uf2" onClick={() => setByHand(true)}>download the .uf2</a> and drag it onto RPI-RP2 yourself.</p>
           </div>
           <div className="actions end">
             <button className="btn md quiet" type="button" onClick={device.cancelBootloader}>Cancel</button>
-            <button className="btn md" type="button" onClick={device.copiedByHand}>I copied it</button>
             <button className="btn md primary" type="button" autoFocus onClick={() => void device.allowBootloader()}>
               <Icon name="zap" />
               Choose drive and flash
