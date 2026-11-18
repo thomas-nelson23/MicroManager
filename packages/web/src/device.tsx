@@ -147,6 +147,27 @@ function waitForBoardPort(vids: number[], ms: number): Promise<SerialPort | null
   });
 }
 
+/**
+ * Fetch a build file from the server, with an error that says what went wrong. Behind Cloudflare Access an
+ * expired sign-in turns the request into a redirect to the login page, which fetch reports as a network
+ * error (or, same-origin, as an HTML page instead of the file).
+ */
+async function download(url: string, what: string): Promise<Uint8Array> {
+  const signIn = `couldn't download the ${what}: the server didn't send the file. If you use the HTTPS address, your sign-in has probably expired: reload the page, sign in, and flash again`;
+  let r: Response;
+  try {
+    r = await fetch(url, { cache: "no-store" });
+  } catch {
+    throw new Error(signIn);
+  }
+  if (r.redirected || (r.headers.get("content-type") ?? "").includes("text/html")) throw new Error(signIn);
+  if (!r.ok) {
+    const why = r.status === 404 || r.status === 500 ? "the build's file is missing on the server; build again" : `HTTP ${r.status}`;
+    throw new Error(`couldn't download the ${what} (${why})`);
+  }
+  return new Uint8Array(await r.arrayBuffer());
+}
+
 export function DeviceProvider({ children }: { children: ReactNode }) {
   const supported = typeof navigator !== "undefined" && "serial" in navigator;
   const insecure = typeof window !== "undefined" && !window.isSecureContext;
@@ -365,10 +386,20 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
     }
     if (!choice) {
       setBusy({ label: "Waiting for you to choose the RPI-RP2 drive" });
-      choice = await new Promise<DriveChoice>((resolve) => {
-        drivePromptRef.current = resolve;
-        setBootloaderPrompt({ kind: "rp2040", fileUrl });
-      });
+      // A copy made by hand ends with the board restarting into the new sketch: its serial port coming
+      // back closes the dialog, so nothing else can start while the copy is still running.
+      const onConnect = (e: Event) => {
+        if (RP2040_VIDS.includes((e.target as SerialPort).getInfo().usbVendorId ?? -1)) answerDrive("manual");
+      };
+      navigator.serial.addEventListener("connect", onConnect);
+      try {
+        choice = await new Promise<DriveChoice>((resolve) => {
+          drivePromptRef.current = resolve;
+          setBootloaderPrompt({ kind: "rp2040", fileUrl });
+        });
+      } finally {
+        navigator.serial.removeEventListener("connect", onConnect);
+      }
     }
     if (choice instanceof Error) throw choice;
     if (!choice) throw new Error("the RPI-RP2 drive wasn't chosen. If it doesn't show up, hold the board's BOOT (BOOTSEL) button while plugging it in or pressing reset, and try again");
@@ -376,7 +407,7 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
       setBusy({ label: "Copying the sketch to the board" });
       await choice.write(uf2);
     }
-  }, []);
+  }, [answerDrive]);
 
   const flash = useCallback(
     (job: FlashJob) =>
@@ -390,9 +421,7 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
             // While still inside the Flash click, renew access to the Pico drive picked on an earlier visit.
             if (kind === "rp2040" && navigator.userActivation?.isActive) await Uf2Drive.renew();
             setBusy({ label: "Downloading sketch" });
-            const r = await fetch(job.sketchUrl);
-            if (!r.ok) throw new Error("couldn't download the sketch");
-            const bytes = new Uint8Array(await r.arrayBuffer());
+            const bytes = await download(job.sketchUrl, "sketch");
             const progress = (p: { stage: string; done?: number; total?: number }) =>
               setBusy({
                 label: p.stage === "write" ? "Writing sketch" : p.stage === "verify" ? "Verifying sketch" : p.stage === "erase" ? "Erasing flash" : `Sketch: ${p.stage}`,
@@ -432,9 +461,7 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
           if (job.screenUrl) {
             if (!t) throw new Error("No device connected. Choose the board's port first.");
             setBusy({ label: "Downloading screen" });
-            const r = await fetch(job.screenUrl);
-            if (!r.ok) throw new Error("couldn't download the screen");
-            const tft = new Uint8Array(await r.arrayBuffer());
+            const tft = await download(job.screenUrl, "screen");
             setBusy({ label: "Connecting to the display" });
             const { nex, info } = await openDisplay(t, 115200, restartFor(kind));
             setDisplay(info);
