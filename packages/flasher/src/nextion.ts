@@ -200,7 +200,7 @@ export class Nextion {
         if (wait > 0) await sleep(wait);
       }
       sent += chunk.length;
-      await this.waitAck(5000, `no ack after ${sent} bytes; the display is in update mode, retry the upload`);
+      await this.waitAck(Math.max(5000, 4096 * perByteMs * 1.5 + 2000), `no ack after ${sent} bytes; the display is in update mode, retry the upload`);
       progress({ stage: "upload", done: sent, total: tft.length, message: `${((Date.now() - t0) / 1000).toFixed(0)} s` });
     }
   }

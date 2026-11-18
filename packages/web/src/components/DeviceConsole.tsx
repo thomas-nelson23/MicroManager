@@ -4,7 +4,7 @@
  */
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { NexReply } from "@nextion-arduino/flasher";
-import { useDevice, type LogEntry } from "../device.tsx";
+import { autoUploadBaud, UPLOAD_BAUDS, useDevice, type LogEntry } from "../device.tsx";
 import { parseHmi } from "../hmi.ts";
 import "./screen-tools.css";
 
@@ -62,6 +62,15 @@ export function DeviceConsole({ hmiText }: { hmiText: string }) {
         </button>
         <label className="note"><input type="checkbox" checked={hideOk} onChange={(e) => setHideOk(e.target.checked)} /> hide "ok" replies</label>
         <span className="spacer" />
+        <label className="note" title="How fast screens are sent to the display. Go slower if uploads end in &quot;Data ERROR!&quot;">
+          Screen upload{" "}
+          <select value={device.uploadBaud} onChange={(e) => device.setUploadBaud(Number(e.target.value))}>
+            <option value={0}>Auto ({autoUploadBaud(device.board)})</option>
+            {UPLOAD_BAUDS.map((b) => (
+              <option key={b} value={b}>{b}</option>
+            ))}
+          </select>
+        </label>
         <button type="button" className="btn quiet" onClick={device.clearLog} disabled={!device.log.length}>Clear</button>
       </div>
       <ol className="console-log" ref={list} aria-live="polite" aria-label="Device console">
