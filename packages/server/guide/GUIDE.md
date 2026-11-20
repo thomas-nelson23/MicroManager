@@ -49,7 +49,7 @@ uploads/            pictures the person attached; their message names them: Read
   Edit. Don't Read or Edit wiring.json: `wire` returns the wiring and any problems the app found.
 - One wire per entry, power and ground too. `pin` as printed on the board (Nano Every `D2`..`D13`,
   `A0`..`A7`, `TX1`, `RX1`, `5V`, `3V3`, `GND`, `VIN`; Teensy 4.1 `0`..`41`, `VIN`, `3V3`, `GND`; Pico `GP0`..`GP28`, `VBUS`, `VSYS`, `3V3`, `GND`; Feather
-  silkscreen labels `TX`, `RX`, `SCL`, `D5`, `A0`, `USB`, `3V3`, `GND`). `part` is a short name, the same for all its wires; `partPin` the pin on the part.
+  silkscreen labels `TX`, `RX`, `SCL`, `D5`, `A0`, `USB`, `3V3`, `GND`; Raspberry Pi `GPIO2`..`GPIO27` (BCM numbers), `5V`, `3V3`, `GND`). `part` is a short name, the same for all its wires; `partPin` the pin on the part.
 - Say in a few words what else a part needs (resistor, library, supply).
 - A board or display switch is handled by the app: it renames the wiring's pins and scales the screen
   to the new resolution. Don't redo that; only fix what the person asks or what a build reports.
@@ -150,3 +150,21 @@ labels; code uses GPIO numbers: TX 0 / RX 1 (Serial1), SDA 2 / SCL 3 (Wire), SCK
 D4 4 (on-board NeoPixel), D5 5, D6 6, D9-D13 9-13, D24/D25. Built in: LIS3DH on Wire (int 22), I2S amp 16-18,
 terminal button 19, servo 20, NeoPixel strip 21. **Set `PIN_EXTERNAL_POWER` (23) HIGH** before using the terminal
 5 V, servo or amp. Power the Nextion from USB.
+
+### board: linux:rpi:pi4
+Raspberry Pi 4 (Linux, Raspberry Pi OS). **This project is a Python 3 program, not a sketch: the Arduino rules
+above about sketch/, NexPass.h, loop() and install_library don't apply.** The code is `pi/main.py` (more modules
+beside it); `pi/nexpass.py` is the app's library: don't edit it (builds refresh it). An old sketch/ folder is
+only a reference to port from. `ship` with target `sketch` checks the Python, packs pi/, and deploys it to the
+Pi over SSH, where it runs as a service (restarted on a crash); no page needs to be open. `ship` reports a
+crash right after start with the program's output; `program_log` shows its output later.
+- Display: `nex = nexpass.NexPass("/dev/serial0", 9600)` once, then a loop that calls `nex.poll()` (returns the
+  messages the display sent: `nexpass.decode(m)` gives `{"touch": {"page", "component", "event"}}`, `{"string"}`,
+  `{"number"}`, ...), `nex.send('t0.txt="hi"')`, and a short `time.sleep(0.02)`. Never open the serial port
+  yourself: NexPass owns it, that's how `display` reaches the screen. Requests: `nex.on_request(fn)`,
+  `fn(req)` answers with `nex.reply("...")` per line (called from poll()). print() goes to the program log.
+- Pins: gpiozero with BCM numbers (`LED(17)`, `Button(BUTTON_PIN)`; constants like `BUTTON_PIN = 27`). **3.3 V
+  logic, not 5 V tolerant**: level shifter or divider for 5 V outputs, in the wiring. No analog inputs (use an
+  ADS1115 or MCP3008). I2C on GPIO2/3, SPI on GPIO7-11, UART (the display) on GPIO14 TX / GPIO15 RX.
+- Libraries: gpiozero, smbus2 and the standard library are there. Anything else from PyPI goes in
+  `pi/requirements.txt` (one per line); the deploy installs it in a venv. Prefer well-known packages.

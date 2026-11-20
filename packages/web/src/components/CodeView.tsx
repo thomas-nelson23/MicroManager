@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FileStore } from "../useFiles.ts";
 
-const order = (p: string) => (p === "sketch/sketch.ino" ? 0 : p.startsWith("sketch/") ? 1 : p === "nextion/hmi.txt" ? 2 : p === "wiring.json" ? 3 : 4);
+const order = (p: string) => (p === "sketch/sketch.ino" || p === "pi/main.py" ? 0 : p.startsWith("sketch/") || p.startsWith("pi/") ? 1 : p === "nextion/hmi.txt" ? 2 : p === "wiring.json" ? 3 : 4);
 
 /** Indexes of lines in `now` that are new or changed compared with `was`. */
 export function changedLines(was: string, now: string): Set<number> {

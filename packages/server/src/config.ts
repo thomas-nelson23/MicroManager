@@ -40,6 +40,12 @@ export const config = {
     sshKey: env.SSH_KEY,
   },
 
+  /** The Raspberry Pi that Pi projects deploy to (user@host), unless a project names its own. Same SSH key as the VM. */
+  pi: {
+    host: env.PI_HOST ?? "",
+    uploadBaud: Number(env.PI_UPLOAD_BAUD ?? 115200),
+  },
+
   defaults: {
     board: { fqbn: env.DEFAULT_FQBN ?? "arduino:megaavr:nona4809", name: env.DEFAULT_BOARD_NAME ?? "Arduino Nano Every" },
     display: {

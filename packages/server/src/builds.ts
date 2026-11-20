@@ -2,7 +2,9 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { isPiBoard } from "./boards.ts";
 import { config } from "./config.ts";
+import { buildPiProgram } from "./pi.ts";
 import {
   type BuildPart,
   type BuildRecord,
@@ -53,8 +55,14 @@ async function refreshNexPass(id: string): Promise<void> {
 
 export async function buildSketch(id: string, outDir: string): Promise<BuildPart> {
   const meta = await readMeta(id);
-  await refreshNexPass(id);
   const t0 = Date.now();
+  if (isPiBoard(meta.board.fqbn)) {
+    // A Raspberry Pi runs pi/main.py: the "build" checks the Python and packs the folder for the deploy.
+    const r = await buildPiProgram(path.join(projectDir(id), "pi"), path.join(outDir, "program.tar.gz"));
+    const seconds = Math.round((Date.now() - t0) / 100) / 10;
+    return r.ok ? { ok: true, file: "program.tar.gz", seconds, bytes: r.bytes } : { ok: false, seconds, error: r.error };
+  }
+  await refreshNexPass(id);
   const r = await run(config.arduinoCli, [
     "compile",
     "--fqbn",

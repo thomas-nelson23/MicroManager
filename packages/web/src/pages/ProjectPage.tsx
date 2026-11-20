@@ -64,6 +64,30 @@ export function ProjectPage({ id, navigate }: { id: string; navigate: (to: strin
   useEffect(() => {
     if (fqbn) device.setBoard(boardKind(fqbn));
   }, [fqbn, device.setBoard]);
+  // A Raspberry Pi's display is reached through the server (SSH), not Web Serial.
+  const config = useConfig();
+  const piHost = fqbn && boardKind(fqbn) === "pi" ? detail?.meta.pi?.host || config.piHost || "" : null;
+  useEffect(() => {
+    if (piHost === null) return;
+    device.setRemote(
+      piHost
+        ? {
+            label: `Pi · ${piHost}`,
+            run: async (commands, listenSeconds) => {
+              const r = await api.piRun(id, commands, listenSeconds);
+              if (!r.ok) throw new Error(r.error ?? "the Pi didn't answer");
+              const all = (r.replies ?? []) as { cmd?: string; reply?: unknown[]; events?: unknown[] }[];
+              return {
+                results: all.filter((x) => x.cmd !== undefined).map((x) => ({ cmd: x.cmd!, reply: x.reply ?? [] })),
+                events: all.flatMap((x) => x.events ?? []),
+              };
+            },
+          }
+        : null,
+    );
+    return () => device.setRemote(null);
+  }, [piHost, id, device.setRemote]);
+  const mainFile = piHost !== null ? "pi/main.py" : "sketch/sketch.ino";
 
   useEffect(() => {
     document.title = detail ? `${detail.meta.title} · Nextion Arduino` : "Nextion Arduino";
@@ -212,14 +236,14 @@ export function ProjectPage({ id, navigate }: { id: string; navigate: (to: strin
                     detail={detail}
                     onAsk={toChat}
                     onOpenSketchLine={(line) => {
-                      setJump({ path: "sketch/sketch.ino", line, key: Date.now() });
+                      setJump({ path: mainFile, line, key: Date.now() });
                       setTab("code");
                     }}
                   />
                 )}
                 {shown === "code" && <CodeView store={files} jump={jump} />}
                 {shown === "builds" && <BuildsView detail={detail} flasher={flasher} />}
-                {shown === "device" && <DeviceConsole hmiText={detail.hmi} />}
+                {shown === "device" && <DeviceConsole hmiText={detail.hmi} projectId={id} />}
               </div>
             </>
           ) : (
@@ -270,7 +294,12 @@ function StatusStrip({ detail, project, flasher, ask, toChat, navigate, onBuilds
   const config = useConfig();
   const [menu, setMenu] = useState<"project" | "flash" | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const locked = project.busy || !!device.busy;
+  const isPi = boardKind(meta.board.fqbn) === "pi";
+  // a Pi deploy runs on the server, so it doesn't show up as device.busy
+  const locked = project.busy || !!device.busy || (isPi && flasher.running !== null);
+  const piHost = meta.pi?.host || config.piHost || "";
+  /** Flashing works: USB in this browser, or a Pi the server deploys to. */
+  const canFlash = isPi || device.supported;
 
   const board = boards.find((b) => b.fqbn === meta.board.fqbn);
   const plugged = device.usb ? boardByUsb(device.usb.vendorId, device.usb.productId) : undefined;
@@ -344,6 +373,21 @@ function StatusStrip({ detail, project, flasher, ask, toChat, navigate, onBuilds
     )
       return;
     await run(() => api.update(meta.id, { display: next.model }));
+  };
+
+  const setPiAddress = async () => {
+    const host = await ask({
+      title: "The Raspberry Pi's address",
+      body: (
+        <>
+          <p>The app deploys the program and talks to the display over SSH, as <code className="code">user@host</code>, e.g. <code className="code">pi@raspberrypi.local</code>.{config.piHost ? <> Leave it empty to use the server's default, {config.piHost}.</> : null}</p>
+          <p>The Pi needs the app's SSH key and a one-time setup: see the README's Raspberry Pi section.</p>
+        </>
+      ),
+      confirm: "Save",
+      input: { label: "Address", value: meta.pi?.host ?? "" },
+    });
+    if (typeof host === "string") await run(() => api.update(meta.id, { piHost: host }));
   };
 
   const rename = async () => {
@@ -420,7 +464,13 @@ function StatusStrip({ detail, project, flasher, ask, toChat, navigate, onBuilds
 
         <span className="spacer" />
 
-        {device.supported ? (
+        {isPi ? (
+          <span className="chip device">
+            <span className={`led ${piHost ? "on" : ""}`} />
+            <span className="chip-text">{piHost ? `Pi · ${piHost}` : "No Pi address"}</span>
+            <button className="btn quiet" type="button" disabled={locked} onClick={() => void setPiAddress()}>{piHost ? "Change…" : "Set address…"}</button>
+          </span>
+        ) : device.supported ? (
           <span className="chip device">
             <span className={`led ${device.portLabel ? "on" : ""}`} />
             <span className="chip-text">{device.portLabel ? `${device.portLabel}${device.display ? ` · ${device.display.model}` : ""}` : "No device"}</span>
@@ -436,10 +486,10 @@ function StatusStrip({ detail, project, flasher, ask, toChat, navigate, onBuilds
         )}
 
         <div className="flash-ctl">
-          {flasher.running !== null && device.busy ? (
+          {flasher.running !== null && (device.busy || flasher.busyLabel) ? (
             <div className="flash-live" role="status">
-              <span>{device.busy.label}{pct !== undefined ? ` · ${pct} %` : ""}</span>
-              <div className="progress"><div className={`bar ${pct === undefined ? "busy" : ""}`}><i style={{ width: pct === undefined ? undefined : `${pct}%` }} /></div></div>
+              <span>{flasher.busyLabel ?? device.busy?.label}{pct !== undefined && !flasher.busyLabel ? ` · ${pct} %` : ""}</span>
+              <div className="progress"><div className={`bar ${pct === undefined || flasher.busyLabel ? "busy" : ""}`}><i style={{ width: pct === undefined || flasher.busyLabel ? undefined : `${pct}%` }} /></div></div>
             </div>
           ) : !latest ? (
             <span className="flash-state">Nothing to flash yet</span>
@@ -450,15 +500,15 @@ function StatusStrip({ detail, project, flasher, ask, toChat, navigate, onBuilds
               {latestOn ? (
                 <span className="flash-state on"><Icon name="check" />Build #{latest.n} is on the device</span>
               ) : (
-                <button className={`btn md ${stale ? "" : "primary"}`} type="button" disabled={!!device.busy || !device.supported} onClick={() => void flasher.flash(latest)}>
-                  <Icon name="zap" />Flash build #{latest.n}
+                <button className={`btn md ${stale ? "" : "primary"}`} type="button" disabled={!!device.busy || !canFlash || (isPi && !piHost)} title={isPi && !piHost ? "Set the Pi's address first" : undefined} onClick={() => void flasher.flash(latest)}>
+                  <Icon name="zap" />{isPi ? "Deploy" : "Flash"} build #{latest.n}
                 </button>
               )}
-              <button className="btn md icon-only" type="button" aria-label="More ways to flash" aria-expanded={menu === "flash"} disabled={!!device.busy || !device.supported} onClick={() => setMenu(menu === "flash" ? null : "flash")}><Icon name="chevronDown" /></button>
+              <button className="btn md icon-only" type="button" aria-label="More ways to flash" aria-expanded={menu === "flash"} disabled={!!device.busy || !canFlash || (isPi && !piHost)} onClick={() => setMenu(menu === "flash" ? null : "flash")}><Icon name="chevronDown" /></button>
               {menu === "flash" && (
                 <span className="menu pop right" role="menu" onMouseLeave={() => setMenu(null)}>
-                  {latest.sketch?.ok && latest.screen?.ok && <button className="item" type="button" role="menuitem" onClick={() => { setMenu(null); void flasher.flash(latest, "both"); }}>{latestOn ? "Flash again: sketch and screen" : "Sketch and screen"}</button>}
-                  {latest.sketch?.ok && <button className="item" type="button" role="menuitem" onClick={() => { setMenu(null); void flasher.flash(latest, "sketch"); }}>Sketch only</button>}
+                  {latest.sketch?.ok && latest.screen?.ok && <button className="item" type="button" role="menuitem" onClick={() => { setMenu(null); void flasher.flash(latest, "both"); }}>{latestOn ? `${isPi ? "Deploy" : "Flash"} again: ${isPi ? "program" : "sketch"} and screen` : `${isPi ? "Program" : "Sketch"} and screen`}</button>}
+                  {latest.sketch?.ok && <button className="item" type="button" role="menuitem" onClick={() => { setMenu(null); void flasher.flash(latest, "sketch"); }}>{isPi ? "Program only" : "Sketch only"}</button>}
                   {latest.screen?.ok && <button className="item" type="button" role="menuitem" onClick={() => { setMenu(null); void flasher.flash(latest, "screen"); }}>Screen only · about 95 s</button>}
                   <span className="sep" />
                   <button className="item" type="button" role="menuitem" onClick={() => { setMenu(null); onBuilds(); }}>All builds…</button>
@@ -469,7 +519,7 @@ function StatusStrip({ detail, project, flasher, ask, toChat, navigate, onBuilds
         </div>
       </div>
 
-      {!device.supported && device.insecure && (
+      {!isPi && !device.supported && device.insecure && (
         <div className="msg warn strip-msg" role="status">
           <span className="led" />
           <div className="body">
@@ -483,7 +533,7 @@ function StatusStrip({ detail, project, flasher, ask, toChat, navigate, onBuilds
           </div>
         </div>
       )}
-      {!device.supported && !device.insecure && (
+      {!isPi && !device.supported && !device.insecure && (
         <div className="msg warn strip-msg" role="status"><span className="led" /><div className="body"><b>This browser can't reach USB devices.</b> Use Chrome or Edge on a computer to flash. Everything else works here.</div></div>
       )}
       {wrongBoard && (

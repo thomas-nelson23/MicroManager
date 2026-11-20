@@ -150,8 +150,40 @@ export interface SketchPin {
 
 const PIN_CALLS = "pinMode|digitalWrite|digitalRead|digitalWriteFast|digitalReadFast|analogRead|analogWrite|attachInterrupt|digitalPinToInterrupt|tone|noTone|pulseIn|shiftOut|shiftIn";
 
+// gpiozero devices take the pin first (LED(17), Button(BUTTON_PIN)); RPi.GPIO calls name it first too.
+const PY_PIN_CALLS = "LED|PWMLED|RGBLED|Button|Buzzer|TonalBuzzer|Servo|AngularServo|MotionSensor|LineSensor|LightSensor|DigitalInputDevice|DigitalOutputDevice|PWMOutputDevice|OutputDevice|InputDevice|SmoothedInputDevice|GPIO\\.setup|GPIO\\.output|GPIO\\.input|GPIO\\.PWM|GPIO\\.add_event_detect";
+
+/** The board pins a Python program uses (Raspberry Pi): gpiozero / RPi.GPIO calls, pin= arguments, constants named like pins. */
+function pythonPins(src: string, board: Board): SketchPin[] {
+  const lines = src.split("\n").map((l) => l.replace(/#.*$/, ""));
+  const consts = new Map<string, { value: string; line: number }>();
+  lines.forEach((l, i) => {
+    const m = /^([A-Za-z_]\w*)\s*(?::\s*int\s*)?=\s*([A-Za-z_]\w*|\d+)\s*$/.exec(l.trimEnd());
+    if (m) consts.set(m[1]!, { value: m[2]!, line: i + 1 });
+  });
+  const resolve = (tok: string, depth = 0): number[] => {
+    const hit = findPins(board, tok).filter((i) => board.pins[i]!.kind === "io");
+    if (hit.length || depth > 4) return hit;
+    const c = consts.get(tok);
+    return c ? resolve(c.value, depth + 1) : [];
+  };
+  const found = new Map<number, SketchPin>();
+  const add = (tok: string, line: number) => {
+    for (const index of resolve(tok).slice(0, 1)) if (!found.has(index)) found.set(index, { index, line, as: tok });
+  };
+  const call = new RegExp(`(?:^|[^\\w.])(?:gpiozero\\.)?(?:${PY_PIN_CALLS})\\s*\\(\\s*(?:pin\\s*=\\s*)?([A-Za-z_]\\w*|\\d+)`, "g");
+  const kw = /\b(?:pin|echo|trigger|red|green|blue|forward|backward)\s*=\s*([A-Za-z_]\w*|\d+)/g;
+  lines.forEach((l, i) => {
+    for (const m of l.matchAll(call)) add(m[1]!, i + 1);
+    for (const m of l.matchAll(kw)) add(m[1]!, i + 1);
+  });
+  for (const [name, c] of consts) if (/pin/i.test(name)) add(name, c.line);
+  return [...found.values()].sort((a, b) => a.line - b.line);
+}
+
 /** The board pins a sketch uses, found from pin calls and from constants named like pins. Best effort. */
 export function sketchPins(src: string, board: Board): SketchPin[] {
+  if (board.flasher === "pi") return pythonPins(src, board);
   const code = src.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
   const lines = code.split("\n").map((l) => l.replace(/\/\/.*$/, ""));
   const consts = new Map<string, { value: string; line: number }>();

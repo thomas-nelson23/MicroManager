@@ -8,6 +8,8 @@ export interface ProjectMeta {
   display: { series: string; model: string; width: number; height: number };
   createdAt: string;
   updatedAt: string;
+  /** Raspberry Pi projects: the Pi to deploy to, when it isn't the server's default. */
+  pi?: { host?: string };
 }
 
 import type { Board } from "@nextion-arduino/server/boards";
@@ -68,9 +70,9 @@ export const api = {
   project: (id: string) => fetch(`/api/projects/${id}`).then((r) => json<ProjectDetail>(r)),
   boards: () => fetch("/api/boards").then((r) => json<Board[]>(r)),
   displays: () => fetch("/api/displays").then((r) => json<DisplayModel[]>(r)),
-  config: () => fetch("/api/config").then((r) => json<{ publicUrl: string }>(r)),
+  config: () => fetch("/api/config").then((r) => json<{ publicUrl: string; piHost?: string }>(r)),
   create: (title: string, board?: string, display?: string) => send("/api/projects", "POST", { title, board, display }).then((r) => json<ProjectMeta>(r)),
-  update: (id: string, patch: { title?: string; description?: string; board?: string; display?: string }) =>
+  update: (id: string, patch: { title?: string; description?: string; board?: string; display?: string; piHost?: string }) =>
     send(`/api/projects/${id}`, "PATCH", patch).then((r) => json<ProjectMeta>(r)),
   remove: (id: string) => send(`/api/projects/${id}`, "DELETE").then((r) => json<{ ok: boolean }>(r)),
   duplicate: (id: string, title: string) => send(`/api/projects/${id}/duplicate`, "POST", { title }).then((r) => json<ProjectMeta>(r)),
@@ -79,6 +81,13 @@ export const api = {
   /** Build the project as it is on the server, without Claude. */
   rebuild: (id: string, target: "sketch" | "screen" | "both") => send(`/api/projects/${id}/builds`, "POST", { target, label: "rebuild" }).then((r) => json<BuildRecord>(r)),
   markFlashed: (id: string, n: number, parts: { sketch: boolean; screen: boolean }) => send(`/api/projects/${id}/builds/${n}/flashed`, "POST", parts),
+  /** Raspberry Pi projects: the server deploys a build over SSH. */
+  deploy: (id: string, n: number, parts: "both" | "sketch" | "screen") =>
+    send(`/api/projects/${id}/builds/${n}/deploy`, "POST", { parts }).then((r) => json<{ status: "done" | "failed"; message: string }>(r)),
+  /** Display commands on the Pi, through its program: [{cmd, reply}, ..., {events}?]. */
+  piRun: (id: string, commands: string[], listen = 0) =>
+    send(`/api/projects/${id}/pi/run`, "POST", { commands, listen }).then((r) => json<{ ok: boolean; replies?: unknown[]; error?: string; note?: string }>(r)),
+  piLog: (id: string, lines = 80) => fetch(`/api/projects/${id}/pi/log?lines=${lines}`).then((r) => json<{ ok: boolean; text: string; host: string }>(r)),
   buildFileUrl: (id: string, n: number, file: string) => `/api/projects/${id}/builds/${n}/${file}`,
   uploadUrl: (id: string, path: string) => `/api/projects/${id}/upload/${path.replace(/^uploads\//, "")}`,
   /** Save inspector edits of one page (no name) or component into hmi.txt. */

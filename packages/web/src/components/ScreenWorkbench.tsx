@@ -125,7 +125,7 @@ export function ScreenWorkbench({ detail, width, pageIdx, setPageIdx, modeSwitch
       return;
     }
     if (!device.portLabel) {
-      setMsg({ ok: false, text: "Choose the board's port first (top right)." });
+      setMsg({ ok: false, text: device.board === "pi" ? "Set the Pi's address first (top right)." : "Choose the board's port first (top right)." });
       return;
     }
     setMsg(null);

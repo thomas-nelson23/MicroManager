@@ -22,8 +22,12 @@ export interface Board {
   id: string;
   fqbn: string;
   name: string;
-  /** How the browser flashes it: UPDI over Web Serial, Teensy HalfKay over WebHID, or a UF2 file on the RP2040's BOOTSEL drive. */
-  flasher: "nano-every" | "teensy" | "rp2040";
+  /**
+   * How a build gets onto it: from the browser as UPDI over Web Serial, Teensy HalfKay over WebHID or a UF2
+   * file on the RP2040's BOOTSEL drive; or, for a Raspberry Pi (a Python program, not a sketch), from the
+   * server over SSH.
+   */
+  flasher: "nano-every" | "teensy" | "rp2040" | "pi";
   /** Logic level of the I/O pins, in volts. */
   volts: number;
   /** True when a pin survives a 5 V signal. */
@@ -184,6 +188,34 @@ const PROP_MAKER_PINS: BoardPin[] = [
   fp("SDA", 2, "R", ["i2c"], "SDA"),
 ];
 
+// Raspberry Pi 4 (and 3/5: same 40-pin header). Pins are named by their BCM GPIO number, which code uses
+// (gpiozero LED(17)); physical header positions are aliases ("PIN11"). Physical order: odd pins on the
+// left, even pins on the right, pin 1 at the top. Hardware PWM is on GPIO12/13/18/19, but gpiozero does
+// software PWM on any pin. There are no analog inputs.
+const RPI_ROLE: Record<number, string> = {
+  2: "SDA", 3: "SCL", 4: "GPCLK0", 14: "TXD", 15: "RXD", 18: "PWM0", 12: "PWM0", 13: "PWM1", 19: "PWM1",
+  10: "MOSI", 9: "MISO", 11: "SCLK", 8: "CE0", 7: "CE1", 0: "ID_SD", 1: "ID_SC", 16: "CE2", 20: "MOSI1", 21: "SCLK1",
+};
+const RPI_HEADER: (number | "3V3" | "5V" | "GND")[] = [
+  "3V3", "5V", 2, "5V", 3, "GND", 4, 14, "GND", 15, 17, 18, 27, "GND", 22, 23, "3V3", 24, 10, "GND",
+  9, 25, 11, 8, "GND", 7, 0, 1, 5, "GND", 6, 12, 13, "GND", 19, 16, 26, 20, "GND", 21,
+];
+function rpiPin(p: (typeof RPI_HEADER)[number], i: number): BoardPin {
+  const side = i % 2 === 0 ? "L" : "R";
+  const phys = `PIN${i + 1}`;
+  if (typeof p === "string") return fixed(p, side, p === "GND" ? "gnd" : "power", [phys, ...(p === "3V3" ? ["3.3V"] : [])]);
+  const role = RPI_ROLE[p];
+  const caps: PinCap[] = ["pwm"];
+  if (p === 2 || p === 3) caps.push("i2c");
+  if (p === 14 || p === 15) caps.push("serial");
+  if ([7, 8, 9, 10, 11, 16, 20, 21].includes(p)) caps.push("spi");
+  const aliases = [String(p), `BCM${p}`, `GP${p}`, phys];
+  if (p === 14) aliases.push("TXD", "TX");
+  if (p === 15) aliases.push("RXD", "RX");
+  return io(`GPIO${p}`, side, caps, { aliases, ...(role ? { role } : {}) });
+}
+const RPI_PINS: BoardPin[] = [...RPI_HEADER.map(rpiPin).filter((p) => p.side === "L"), ...RPI_HEADER.map(rpiPin).filter((p) => p.side === "R")];
+
 export const BOARDS: Board[] = [
   {
     id: "nano-every",
@@ -229,7 +261,21 @@ export const BOARDS: Board[] = [
     usb: [{ vendorId: 0x239a, productId: 0x8131 }, { vendorId: 0x239a, productId: 0xc131 }],
     pins: PROP_MAKER_PINS,
   },
+  {
+    id: "rpi4",
+    fqbn: "linux:rpi:pi4",
+    name: "Raspberry Pi 4",
+    flasher: "pi",
+    volts: 3.3,
+    fiveVoltTolerant: false,
+    flashKb: 0,
+    usb: [],
+    pins: RPI_PINS,
+  },
 ];
+
+/** A Linux board: the project is a Python program in pi/, deployed over SSH, not an Arduino sketch. */
+export const isPiBoard = (fqbn: string) => fqbn.startsWith("linux:");
 
 export const boardById = (id: string) => BOARDS.find((b) => b.id === id);
 export const boardByFqbn = (fqbn: string) => BOARDS.find((b) => b.fqbn === fqbn);

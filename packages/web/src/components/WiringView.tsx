@@ -138,7 +138,7 @@ export function WiringView({ board: realBoard, boardName, wiring, wiringError, l
                 <circle cx={p.x} cy={p.y} r="5" className="w-dot" />
                 {inSketch && !wired && <circle cx={p.x} cy={p.y} r="8.5" className="w-ring" />}
                 <text x={left ? p.x + 11 : p.x - 11} y={p.y + 4} textAnchor={left ? "start" : "end"} className="w-pin-name">{pin.name}</text>
-                {pin.role && <text x={left ? p.x + 46 : p.x - 46} y={p.y + 3.5} textAnchor={left ? "start" : "end"} className="w-role">{pin.role.split(",")[0]}</text>}
+                {pin.role && <text x={left ? p.x + model.roleOff : p.x - model.roleOff} y={p.y + 3.5} textAnchor={left ? "start" : "end"} className="w-role">{pin.role.split(",")[0]}</text>}
                 <title>{`${pin.name}${pin.role ? ` · ${pin.role}` : ""}${pin.caps.length ? ` · ${pin.caps.map((c) => CAP_WORDS[c]).join(", ")}` : ""}`}</title>
               </g>
             );
@@ -291,7 +291,9 @@ function layout(board: Board, wiring: Wiring) {
   const rows = Math.max(left.length, right.length, 4);
   // wide enough that the role notes of both edges don't meet in the middle
   const roleLen = (list: typeof left) => Math.max(0, ...list.map((x) => (x.p.role ?? "").split(",")[0]!.length));
-  const BOARD_W = Math.max(168, Math.round(104 + (roleLen(left) + roleLen(right)) * 5.6));
+  // role notes start past the longest pin name ("GPIO27" needs more room than "D4")
+  const ROLE_OFF = Math.max(46, Math.round(14 + Math.max(...board.pins.map((p) => p.name.length)) * 6.6));
+  const BOARD_W = Math.max(168, Math.round(2 * ROLE_OFF + 12 + (roleLen(left) + roleLen(right)) * 5.6));
   const bh = rows * PITCH + 44;
 
   // Which side each part sits on: where most of its signal pins are.
@@ -411,5 +413,5 @@ function layout(board: Board, wiring: Wiring) {
 
   const width = bx + BOARD_W + (count.R > 0 ? lanesR + PART_W : cross.length ? lanesR : 12) + PAD;
   const total = Math.max(by + bh + 12 + under * LANE, height.L, height.R) + PAD;
-  return { width, height: total, bx, by, bh, bw: BOARD_W, pins, parts, wires: dense };
+  return { width, height: total, bx, by, bh, bw: BOARD_W, roleOff: ROLE_OFF, pins, parts, wires: dense };
 }

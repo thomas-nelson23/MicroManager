@@ -40,6 +40,8 @@ container never touches USB.
 | `CHAT_FRESH_AFTER_MIN` | no | `120` (default): start a fresh Claude conversation after this many idle minutes |
 | `CHAT_MAX_CONTEXT` | no | `60000` (default): start a fresh conversation once the last one passed this many tokens |
 | `CLAUDE_EFFORT` | no | `medium` (default); `low`, `high`, `xhigh` or `max` |
+| `PI_HOST` | no | `user@address` of a Raspberry Pi that Pi projects deploy to (projects can also set their own). The Pi needs the container's SSH key in `~/.ssh/authorized_keys` (step 4) and the setup in the README. |
+| `PI_UPLOAD_BAUD` | no | `115200` (default): baud for screen uploads on a Pi |
 | `PUBLIC_URL` | no | The HTTPS address of the app, e.g. `https://arduino.example.com`. When someone opens the app over plain HTTP, where browsers block flashing, the page links here. |
 
 ## Before you start: what to get from the owner
@@ -208,6 +210,7 @@ so the next message starts a fresh Claude session in the same project.
   <Config Name="Claude chat model" Target="CLAUDE_CHAT_MODEL" Default="claude-sonnet-5-5" Mode="" Description="Model for everyday chat turns." Type="Variable" Display="advanced" Required="false" Mask="false">claude-sonnet-5-5</Config>
   <Config Name="Claude model" Target="CLAUDE_MODEL" Default="claude-opus-5-5" Mode="" Description="Model for a message sent with Think harder." Type="Variable" Display="advanced" Required="false" Mask="false">claude-opus-5-5</Config>
   <Config Name="Claude effort" Target="CLAUDE_EFFORT" Default="medium" Mode="" Description="Reasoning effort for the chat: low, medium, high, xhigh or max. Higher is more careful and slower." Type="Variable" Display="advanced" Required="false" Mask="false">medium</Config>
+  <Config Name="Raspberry Pi" Target="PI_HOST" Default="" Mode="" Description="user@address of a Raspberry Pi that Pi projects deploy to over SSH (optional; projects can set their own)." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="Public URL" Target="PUBLIC_URL" Default="" Mode="" Description="HTTPS address of the app. The page links to it when opened over plain HTTP, where browsers block flashing." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
 </Container>
 ```

@@ -13,6 +13,7 @@ Design and decisions: [SPEC.md](SPEC.md).
 | `packages/flasher` | Web Serial / WebHID / Node serial library: Nano Every flashing (jtag2updi), Teensy 4.1 flashing (HalfKay), RP2040 UF2 checks and Nextion TFT upload. |
 | `packages/flash-test` | Standalone page for testing the flasher against hardware. |
 | `packages/server/template/sketch/NexPass.h` | The passthrough every sketch includes so the browser can reach the display through the running sketch. |
+| `packages/server/pi/` | Raspberry Pi side: `nexpass.py` (the Python program's display library and the app's way in), `nexctl.py` (display commands and TFT uploads on the Pi) and `remote.sh` (installs a deploy). |
 
 ## Development
 
@@ -51,6 +52,28 @@ sudo cp 00-teensy.rules /etc/udev/rules.d/ && sudo udevadm control --reload-rule
 Then replug the Teensy. Your user also needs serial access (`dialout`, or `uucp` on Arch-based systems).
 A new Teensy runs a factory blink sketch with no serial port, so the port picker won't list it: flash it
 once with the button method above (or Teensy Loader), and from then on the app's sketches keep USB serial.
+
+**Raspberry Pi 4:** a Pi project is a Python program (`pi/main.py`, talking to the display through the app's
+`pi/nexpass.py`), not a sketch. The server deploys it over SSH (same key as the VM) and runs it on the Pi as the
+user service `nextion-app`; screen uploads, display commands and the device console also go over SSH, so no
+browser USB is involved. Set the Pi with `PI_HOST=user@host` on the server, or per project next to the board
+picker. One-time setup on the Pi (Raspberry Pi OS Bookworm), with the Nextion on GPIO14/15 (pins 8/10):
+
+```bash
+sudo apt install -y python3-serial python3-venv
+sudo raspi-config nonint do_serial_cons 1    # no login console on the UART
+sudo raspi-config nonint do_serial_hw 0      # enable the UART (/dev/serial0)
+sudo usermod -aG dialout "$USER"             # serial access
+sudo loginctl enable-linger "$USER"          # the program runs without a login, and starts at boot
+mkdir -p ~/.ssh && echo '<the container's id_ed25519.pub>' >> ~/.ssh/authorized_keys
+sudo reboot
+```
+
+By default `/dev/serial0` is the mini UART, which works at 9600 and for 115200 uploads. If uploads are
+unreliable, give the header the full UART with `dtoverlay=disable-bt` in `/boot/firmware/config.txt` (this turns
+Bluetooth off), or lower the upload speed with `PI_UPLOAD_BAUD`. On the Pi everything lives in `~/nextion-app`:
+`current/` (the program), `app.log` (its output), `tools/` (the app's helper). Extra Python packages go in
+`pi/requirements.txt` and are installed into `~/nextion-app/venv` on deploy.
 
 Each project keeps its wiring in `wiring.json` (board pin, part, part pin, wire colour); the Wiring tab draws it on
 the board's pinout and checks it against the board and the sketch. Boards and their pins are in

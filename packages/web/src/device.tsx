@@ -28,9 +28,16 @@ import { WebSerialTransport } from "@nextion-arduino/flasher/web";
 import { WebHidHalfKay } from "@nextion-arduino/flasher/web-hid";
 import { canWriteDrives, Uf2Drive } from "@nextion-arduino/flasher/web-uf2";
 
-/** How the current project's board is flashed (from its FQBN). */
-export type BoardKind = "nano-every" | "teensy" | "rp2040";
-export const boardKind = (fqbn: string): BoardKind => (fqbn.startsWith("teensy:") ? "teensy" : fqbn.startsWith("rp2040:") ? "rp2040" : "nano-every");
+/** How the current project's board is flashed (from its FQBN). A Raspberry Pi ("pi") is reached through the server over SSH. */
+export type BoardKind = "nano-every" | "teensy" | "rp2040" | "pi";
+export const boardKind = (fqbn: string): BoardKind =>
+  fqbn.startsWith("teensy:") ? "teensy" : fqbn.startsWith("rp2040:") ? "rp2040" : fqbn.startsWith("linux:") ? "pi" : "nano-every";
+
+/** A display the server reaches for the page (a Raspberry Pi over SSH), used instead of Web Serial. */
+export interface RemoteDevice {
+  label: string;
+  run(commands: string[], listenSeconds: number): Promise<{ results: CommandResult[]; events: unknown[] }>;
+}
 
 /** The flash is waiting for a click: to allow the Teensy bootloader, or to pick the Pico's drive (with the .uf2 to copy by hand instead). */
 export type BootloaderPrompt = { kind: "teensy" } | { kind: "rp2040"; fileUrl: string };
@@ -76,6 +83,8 @@ interface Device {
   /** The board is waiting in its bootloader for the person (WebHID and drive access need a click). */
   bootloaderPrompt: BootloaderPrompt | null;
   setBoard(kind: BoardKind): void;
+  /** For a Raspberry Pi project: how the page reaches its display (through the server), or null. */
+  setRemote(remote: RemoteDevice | null): void;
   choosePort(): Promise<boolean>;
   /** Choose the port if none is chosen yet. False if flashing can't go ahead. */
   ensurePort(): Promise<boolean>;
@@ -506,9 +515,36 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
     [addLog],
   );
 
+  const [remote, setRemote] = useState<RemoteDevice | null>(null);
+  const remoteMode = board === "pi";
+  const remoteRef = useRef<RemoteDevice | null>(null);
+  remoteRef.current = remoteMode ? remote : null;
+
+  /** Display commands through the server (Raspberry Pi), logged like the Web Serial ones. */
+  const runRemote = useCallback(
+    async (r: RemoteDevice, commands: string[], listenSeconds: number) => {
+      pending.current++;
+      setBusy({ label: "Talking to the display on the Pi" });
+      addLog(commands.map((text) => ({ dir: "out" as const, text })));
+      try {
+        const out = await r.run(commands, listenSeconds);
+        for (const res of out.results) addLog((res.reply as Record<string, unknown>[]).map((x) => ("error" in x ? { dir: "note" as const, text: String(x.error) } : { dir: "in" as const, reply: x as unknown as NexReply })));
+        addLog(out.events.map((x) => ({ dir: "in" as const, reply: x as NexReply })));
+        return out;
+      } catch (e) {
+        addLog([{ dir: "note", text: e instanceof Error ? e.message : String(e) }]);
+        throw e;
+      } finally {
+        pending.current--;
+        setBusy(null);
+      }
+    },
+    [addLog],
+  );
+
   const run = useCallback(
     (commands: string[], listenSeconds = 0) =>
-      exclusive(async (t) => {
+      remoteRef.current ? runRemote(remoteRef.current, commands, listenSeconds) : exclusive(async (t) => {
         setBusy({ label: "Talking to the display" });
         const { nex } = await connect(t!);
         const results: CommandResult[] = [];
@@ -535,7 +571,7 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
         const events = await listen(nex, t!, listenSeconds);
         return { results, events };
       }),
-    [exclusive, connect, listen, addLog],
+    [exclusive, connect, listen, addLog, runRemote],
   );
 
   // Live mode: while nothing else is queued, read whatever the device sends and log it.
@@ -563,6 +599,8 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
 
   const setLive = useCallback(
     (on: boolean) => {
+      // a Pi's display is reached per request through the server: there is no port to keep open
+      if (remoteRef.current) on = false;
       liveRef.current = on;
       setLiveState(on);
       if (on) pump();
@@ -588,13 +626,14 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
     () => ({
       supported,
       insecure,
-      usb: transport ? { vendorId: transport.port.getInfo().usbVendorId, productId: transport.port.getInfo().usbProductId } : null,
-      portLabel: transport ? label(transport.port) : null,
+      usb: !remoteMode && transport ? { vendorId: transport.port.getInfo().usbVendorId, productId: transport.port.getInfo().usbProductId } : null,
+      portLabel: remoteMode ? (remote?.label ?? null) : transport ? label(transport.port) : null,
       display,
       busy,
       board,
       bootloaderPrompt,
       setBoard,
+      setRemote,
       choosePort,
       ensurePort,
       allowBootloader,
@@ -607,7 +646,7 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
       log,
       clearLog,
     }),
-    [supported, insecure, transport, display, busy, board, bootloaderPrompt, setBoard, choosePort, ensurePort, allowBootloader, copiedByHand, cancelBootloader, flash, run, live, setLive, log, clearLog],
+    [supported, insecure, transport, display, busy, board, bootloaderPrompt, setBoard, remoteMode, remote, choosePort, ensurePort, allowBootloader, copiedByHand, cancelBootloader, flash, run, live, setLive, log, clearLog],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

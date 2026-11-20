@@ -39,6 +39,27 @@ function ToolRows({ tools, results }: { tools: ToolEv[]; results: Map<string, Re
   );
 }
 
+/** A Raspberry Pi build: the server deploys it over SSH by itself, so the card only shows how it's going. */
+function PiDeployCard({ ev }: { ev: FlashEv }) {
+  const waiting = ev.status === "waiting";
+  const parts = [ev.sketch && "program", ev.screen && "screen"].filter(Boolean).join(" and ");
+  return (
+    <div className={`flash-card ${waiting ? "live" : ""}`}>
+      <div className="flash-head">
+        <div className="flash-text">
+          <span className="flash-title">{waiting ? `Deploying build #${ev.build} to the Pi` : ev.status === "done" ? `Deployed build #${ev.build}` : ev.status === "failed" ? `Deploying build #${ev.build} failed` : `Skipped build #${ev.build}`}</span>
+          <span className="flash-sub" style={{ whiteSpace: "pre-wrap" }}>{waiting ? `${ev.label} · ${parts}${ev.message ? ` · ${ev.message}` : ""}` : ev.message}</span>
+        </div>
+      </div>
+      {waiting && (
+        <div className="progress">
+          <div className="bar busy"><i /></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FlashCard({ ev, project }: { ev: FlashEv; project: ProjectState }) {
   const device = useDevice();
   const [running, setRunning] = useState(false);
@@ -51,6 +72,7 @@ function FlashCard({ ev, project }: { ev: FlashEv; project: ProjectState }) {
     project.flashResult(ev.id, r.status, r.message);
   };
   const waiting = ev.status === "waiting";
+  if (ev.via === "pi") return <PiDeployCard ev={ev} />;
   const pct = device.busy?.total ? Math.round(((device.busy.done ?? 0) * 100) / device.busy.total) : undefined;
   return (
     <div className={`flash-card ${waiting ? "live" : ""}`}>

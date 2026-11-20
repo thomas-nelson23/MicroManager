@@ -23,5 +23,6 @@
   <Config Name="Claude chat model" Target="CLAUDE_CHAT_MODEL" Default="claude-sonnet-5-5" Mode="" Description="Model for everyday chat turns." Type="Variable" Display="advanced" Required="false" Mask="false">claude-sonnet-5-5</Config>
   <Config Name="Claude model" Target="CLAUDE_MODEL" Default="claude-opus-5-5" Mode="" Description="Model for a message sent with Think harder." Type="Variable" Display="advanced" Required="false" Mask="false">claude-opus-5-5</Config>
   <Config Name="Claude effort" Target="CLAUDE_EFFORT" Default="medium" Mode="" Description="Reasoning effort for the chat: low, medium, high, xhigh or max. Higher is more careful and slower." Type="Variable" Display="advanced" Required="false" Mask="false">medium</Config>
+  <Config Name="Raspberry Pi" Target="PI_HOST" Default="" Mode="" Description="user@address of a Raspberry Pi that Pi projects deploy to over SSH (optional; projects can set their own)." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="Public URL" Target="PUBLIC_URL" Default="" Mode="" Description="HTTPS address of the app. The page links to it when opened over plain HTTP, where browsers block flashing." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
 </Container>

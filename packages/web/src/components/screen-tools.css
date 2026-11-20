@@ -41,6 +41,7 @@
 .console-log .in { color: var(--text-bright); }
 .console-log .sketch { color: var(--cyan); }
 .console-log .note { color: var(--text-dim); font-style: italic; }
+.console-pi-log { max-height: 30vh; overflow: auto; margin: 0; padding: 8px 10px; background: var(--well); border: 1px solid var(--hair); border-radius: var(--radius-2); font: 12px/1.5 var(--font-mono); color: var(--text-soft); white-space: pre-wrap; word-break: break-word; }
 .console-form { display: flex; gap: 8px; }
 .console-form input { flex: 1; min-width: 0; height: 28px; padding: 0 10px; background: var(--base); border: 1px solid var(--hair-strong); border-radius: var(--radius-2); color: var(--text); font: 13px var(--font-mono); }
 .console-form input:focus { outline: none; border-color: var(--cyan); }
