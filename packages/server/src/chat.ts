@@ -12,7 +12,8 @@ import { componentInfo } from "./components.ts";
 import { config } from "./config.ts";
 import { hubFor, type ProjectHub } from "./hub.ts";
 import type { ChatEvent, ClientMessage } from "./protocol.ts";
-import { boardByFqbn } from "./boards.ts";
+import { boardByFqbn, isPiBoard } from "./boards.ts";
+import { deployToPi, piDisplay, piLog } from "./pi.ts";
 import { listBuilds, markFlashed, projectDir, readMeta, readWiring, writeMeta, writeWiring } from "./projects.ts";
 import { applyWiring, checkWiring, wiringLines } from "./wiring.ts";
 
@@ -31,7 +32,7 @@ export function splitGuide(md: string): { guide: string; boards: Map<string, str
 }
 const { guide: GUIDE, boards: BOARD_NOTES } = splitGuide(GUIDE_FULL);
 
-const PREAMBLE = `You are Claude, working inside NextionDesigner, a web app where a person builds Arduino + Nextion display projects by chatting with you. Your tools: Read, Edit, Write, Glob and Grep on the project folder (your working directory), and the bench tools (ship, wire, check_screen, flash, display, component_info, install_library). Read a file before you Edit it, and give Edit the exact text. Use relative paths. Be brief.`;
+const PREAMBLE = `You are Claude, working inside NextionDesigner, a web app where a person builds Arduino + Nextion display projects by chatting with you. Your tools: Read, Edit, Write, Glob and Grep on the project folder (your working directory), and the bench tools (ship, wire, check_screen, flash, display, component_info, install_library, program_log). Read a file before you Edit it, and give Edit the exact text. Use relative paths. Be brief.`;
 
 const text = (s: string, isError = false) => ({ content: [{ type: "text" as const, text: s }], ...(isError ? { isError: true } : {}) });
 
@@ -106,8 +107,35 @@ function benchServer(projectId: string, hub: ProjectHub) {
     return { ok: true, out: msg || "OK" };
   };
 
+  /** A Raspberry Pi build goes over SSH from here: no browser needed, and the chat shows how it went. */
+  const deployBuild = async (b: Awaited<ReturnType<typeof listBuilds>>[number], parts: "both" | "sketch" | "screen"): Promise<{ ok: boolean; out: string }> => {
+    const meta = await readMeta(projectId);
+    const bdir = path.join(dir, "builds", String(b.n));
+    const app = parts !== "screen" && b.sketch?.ok && b.sketch.file ? path.join(bdir, b.sketch.file) : undefined;
+    const tft = parts !== "sketch" && b.screen?.ok && b.screen.file ? path.join(bdir, b.screen.file) : undefined;
+    if (!app && !tft) return { ok: false, out: `Build #${b.n} has nothing to deploy for "${parts}".` };
+    const id = randomUUID();
+    const base = `/api/projects/${projectId}/builds/${b.n}`;
+    await hub.emit({ kind: "flash", id, build: b.n, label: b.label, via: "pi", sketch: app && `${base}/${b.sketch!.file}`, screen: tft && `${base}/${b.screen!.file}`, screenBytes: tft ? b.screen?.bytes : undefined, status: "waiting", message: "Deploying to the Pi…" });
+    let lastPct = -1;
+    const r = await deployToPi(meta, { app, tft }, (done, total) => {
+      const pct = Math.floor((done * 100) / total / 10) * 10;
+      if (pct !== lastPct) {
+        lastPct = pct;
+        hub.broadcast({ type: "update", id, patch: { message: `Uploading the screen to the Pi · ${pct} %` } });
+      }
+    });
+    await hub.update(id, { status: r.ok ? "done" : "failed", message: r.message } as Partial<ChatEvent>);
+    if (r.ok) {
+      await markFlashed(projectId, b.n, !!app, !!tft);
+      hub.broadcast({ type: "project_changed" });
+    }
+    return { ok: r.ok, out: `Deploy #${b.n} ${r.ok ? "done" : "failed"}: ${r.message}` };
+  };
+
   const flashBuild = async (n: number | undefined, parts: "both" | "sketch" | "screen"): Promise<{ ok: boolean; out: string }> => {
-    if (!hub.connected) return { ok: false, out: "Not flashed: nobody has the project page open." };
+    const pi = isPiBoard((await readMeta(projectId)).board.fqbn);
+    if (!pi && !hub.connected) return { ok: false, out: "Not flashed: nobody has the project page open." };
     const builds = await listBuilds(projectId);
     const b = n ? builds.find((x) => x.n === n) : builds[0];
     if (!b) return { ok: false, out: "There is no build yet." };
@@ -115,6 +143,7 @@ function benchServer(projectId: string, hub: ProjectHub) {
     const sketch = parts !== "screen" && b.sketch?.ok && b.sketch.file ? `${base}/${b.sketch.file}` : undefined;
     const screen = parts !== "sketch" && b.screen?.ok && b.screen.file ? `${base}/${b.screen.file}` : undefined;
     if (!sketch && !screen) return { ok: false, out: `Build #${b.n} has nothing flashable for "${parts}".` };
+    if (pi) return deployBuild(b, parts);
     const id = randomUUID();
     const ev: ChatEvent = { kind: "flash", id, build: b.n, label: b.label, sketch, screen, screenBytes: screen ? b.screen?.bytes : undefined, status: "waiting" };
     await hub.emit(ev);
@@ -130,6 +159,12 @@ function benchServer(projectId: string, hub: ProjectHub) {
   };
 
   const displayCommands = async (commands: string[], listenSeconds?: number): Promise<{ ok: boolean; out: string }> => {
+    const meta = await readMeta(projectId);
+    if (isPiBoard(meta.board.fqbn)) {
+      const r = await piDisplay(meta, commands, listenSeconds);
+      if (!r.ok) return { ok: false, out: r.error ?? "failed" };
+      return { ok: true, out: `${compactReplies(commands, r.replies ?? [])}${r.note ? `\n(${r.note})` : ""}` };
+    }
     if (!hub.connected) return { ok: false, out: "Nobody has the project page open, so the display can't be reached." };
     const id = randomUUID();
     hub.broadcast({ type: "device_request", id, commands, listenSeconds });
@@ -166,7 +201,7 @@ function benchServer(projectId: string, hub: ProjectHub) {
           if (!flash) return text(lines.join("\n"));
           const f = await flashBuild(b.n, target);
           lines.push(f.out);
-          if (!f.ok) return text(lines.join("\n"), hub.connected);
+          if (!f.ok) return text(lines.join("\n"), hub.connected || isPiBoard((await readMeta(projectId)).board.fqbn));
           if (verify?.length) {
             const d = await displayCommands(verify);
             lines.push(`verify: ${d.out}`);
@@ -244,6 +279,17 @@ function benchServer(projectId: string, hub: ProjectHub) {
         },
       ),
       tool(
+        "program_log",
+        "Raspberry Pi projects only: whether the program's service is running, and the last lines it printed (print() output and tracebacks).",
+        { lines: z.number().int().min(1).max(400).default(60) },
+        async ({ lines }) => {
+          const meta = await readMeta(projectId);
+          if (!isPiBoard(meta.board.fqbn)) return text("Only Raspberry Pi projects have a program log; Arduino sketches talk through NexPass.", true);
+          const r = await piLog(meta, lines);
+          return text(r.text || "(the log is empty)", !r.ok);
+        },
+      ),
+      tool(
         "display",
         "Send Nextion instructions to the live display through the person's browser and the running sketch, and get the decoded replies. Examples: 'get t0.txt', 'get dp', 'click b0,1', 'page 1'. Changes are temporary. A line starting with '@' goes to the sketch's NexPass.onRequest handler instead (see device.md) and returns its reply lines.",
         {
@@ -285,6 +331,8 @@ function toolLabel(name: string, input: Record<string, unknown>, cwd: string): {
       return { label: "FLASH", detail: `${input.parts ?? "both"}${input.build ? ` · #${input.build}` : ""}` };
     case "mcp__bench__install_library":
       return { label: "LIBRARY", detail: String(input.name ?? "") };
+    case "mcp__bench__program_log":
+      return { label: "LOG", detail: "Pi program" };
     case "mcp__bench__display":
       return { label: "DISPLAY", detail: (input.commands as string[] | undefined)?.join(" · ") };
     default:
@@ -397,7 +445,7 @@ export async function sendMessage(projectId: string, typedText: string, attached
     }
     const tools = ["Read", "Edit", "Write", "Glob", "Grep"];
     if (config.allowBash) tools.push("Bash");
-    const allowed = [...tools, "mcp__bench__ship", "mcp__bench__wire", "mcp__bench__check_screen", "mcp__bench__component_info", "mcp__bench__flash", "mcp__bench__display", "mcp__bench__install_library"];
+    const allowed = [...tools, "mcp__bench__ship", "mcp__bench__wire", "mcp__bench__check_screen", "mcp__bench__component_info", "mcp__bench__flash", "mcp__bench__display", "mcp__bench__install_library", "mcp__bench__program_log"];
     const boardNotes = BOARD_NOTES.get(meta.board.fqbn) ?? "";
     if (hub.screenEdits.size) {
       userText = `(Saved by the person in the screen editor since your last turn, already in nextion/hmi.txt: ${[...hub.screenEdits].join("; ")}. Keep those values unless asked.)\n\n${userText}`;

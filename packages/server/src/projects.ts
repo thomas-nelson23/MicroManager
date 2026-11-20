@@ -1,7 +1,7 @@
 /** Projects as plain folders: project.json, sketch/, nextion/, hardware.md, builds/<n>/. */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { type Board, boardById, boardByFqbn } from "./boards.ts";
+import { type Board, boardById, boardByFqbn, isPiBoard } from "./boards.ts";
 import { config, projectsDir } from "./config.ts";
 import { type DisplayModel, displayByModel } from "./displays.ts";
 import { retargetHmi } from "./hmi-compact.ts";
@@ -15,6 +15,8 @@ export interface ProjectMeta {
   display: { series: string; model: string; width: number; height: number };
   createdAt: string;
   updatedAt: string;
+  /** Raspberry Pi projects: the Pi to deploy to (user@host), when it isn't the server's PI_HOST. */
+  pi?: { host?: string };
   /** Claude Agent SDK session to resume, once the first message was sent. */
   sessionId?: string;
   /** When that session last finished a turn, and how big its context was then (tokens). */
@@ -105,6 +107,11 @@ export async function createProject(title: string, description = "", boardId?: s
   const dir = projectDir(id);
   await fs.cp(path.join(config.serverRoot, "template"), dir, { recursive: true });
   await fs.mkdir(path.join(dir, "builds"), { recursive: true });
+  // A Raspberry Pi project is a Python program in pi/ instead of a sketch.
+  if (board && isPiBoard(board.fqbn)) {
+    await fs.rm(path.join(dir, "sketch"), { recursive: true, force: true });
+    await addPiProgram(dir);
+  }
   if (board) await fs.copyFile(boardFile(board, "hardware.md"), path.join(dir, "hardware.md"));
   else await fs.writeFile(path.join(dir, "hardware.md"), "# Hardware\n\nDisplay: Nextion on Serial1 at 9600 baud.\n");
   if (board) await fs.copyFile(boardFile(board, "wiring.json"), path.join(dir, "wiring.json"));
@@ -149,10 +156,26 @@ export async function setBoard(meta: ProjectMeta, board: Board): Promise<void> {
     const { wiring, error } = parseWiring(curW);
     if (!error) await fs.writeFile(wj, formatWiring(remapWiring(wiring, old, board)));
   }
-  await fs.copyFile(path.join(config.serverRoot, "template", "sketch", "NexPass.h"), path.join(dir, "sketch", "NexPass.h"));
+  if (isPiBoard(board.fqbn)) {
+    // The sketch stays for reference (Claude ports it on request); the program starts from the template.
+    await addPiProgram(dir);
+  } else {
+    if (!(await exists(path.join(dir, "sketch", "sketch.ino")))) await fs.cp(path.join(config.serverRoot, "template", "sketch"), path.join(dir, "sketch"), { recursive: true });
+    await fs.copyFile(path.join(config.serverRoot, "template", "sketch", "NexPass.h"), path.join(dir, "sketch", "NexPass.h"));
+  }
   meta.board = { fqbn: board.fqbn, name: board.name };
   await writeMeta(meta);
 }
+
+/** Give a project pi/main.py (the starter program) unless it has one, and the current nexpass.py. */
+async function addPiProgram(dir: string): Promise<void> {
+  await fs.mkdir(path.join(dir, "pi"), { recursive: true });
+  if (!(await exists(path.join(dir, "pi", "main.py")))) await fs.copyFile(path.join(config.serverRoot, "template-pi", "main.py"), path.join(dir, "pi", "main.py"));
+  await fs.copyFile(path.join(config.serverRoot, "pi", "nexpass.py"), path.join(dir, "pi", "nexpass.py"));
+}
+
+/** The project's main program file: pi/main.py on a Raspberry Pi, else the sketch. */
+export const mainSource = (meta: Pick<ProjectMeta, "board">) => (isPiBoard(meta.board.fqbn) ? "pi/main.py" : "sketch/sketch.ino");
 
 /**
  * Switch a project to another display. The screen is carried over here, not by Claude: positions and
@@ -280,7 +303,7 @@ export async function listFiles(id: string): Promise<FileEntry[]> {
   const out: FileEntry[] = [];
   async function walk(rel: string) {
     for (const ent of await fs.readdir(path.join(root, rel), { withFileTypes: true })) {
-      if (ent.name.startsWith(".")) continue;
+      if (ent.name.startsWith(".") || ent.name === "__pycache__") continue;
       const r = rel ? `${rel}/${ent.name}` : ent.name;
       if (ent.isDirectory()) {
         if (r === "builds" || r === "nextion/out" || r === "uploads") continue;

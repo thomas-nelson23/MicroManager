@@ -14,6 +14,8 @@ export type ChatEvent =
       sketch?: string;
       screen?: string;
       screenBytes?: number;
+      /** "pi": the server deploys it over SSH by itself; the page only shows how it went. */
+      via?: "pi";
       status: "waiting" | "done" | "failed" | "skipped";
       message?: string;
     }

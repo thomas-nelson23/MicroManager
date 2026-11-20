@@ -4,6 +4,7 @@
  */
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { NexReply } from "@nextion-arduino/flasher";
+import { api } from "../api.ts";
 import { useDevice, type LogEntry } from "../device.tsx";
 import { parseHmi } from "../hmi.ts";
 import "./screen-tools.css";
@@ -24,8 +25,19 @@ function describe(r: NexReply, names: (page: number, id: number) => string | und
 
 const time = (at: number) => new Date(at).toLocaleTimeString([], { hour12: false });
 
-export function DeviceConsole({ hmiText }: { hmiText: string }) {
+/** `projectId` with a Raspberry Pi: commands go through the server, and the program's log can be fetched. */
+export function DeviceConsole({ hmiText, projectId }: { hmiText: string; projectId?: string }) {
   const device = useDevice();
+  const pi = device.board === "pi";
+  const [piLog, setPiLog] = useState<string | null>(null);
+  const [loadingLog, setLoadingLog] = useState(false);
+  const loadLog = async () => {
+    if (!projectId) return;
+    setLoadingLog(true);
+    const r = await api.piLog(projectId).catch((e: Error) => ({ ok: false, text: e.message, host: "" }));
+    setPiLog(r.text || "(the program hasn't printed anything)");
+    setLoadingLog(false);
+  };
   const [input, setInput] = useState("");
   const [hideOk, setHideOk] = useState(true);
   const list = useRef<HTMLOListElement>(null);
@@ -57,15 +69,34 @@ export function DeviceConsole({ hmiText }: { hmiText: string }) {
   return (
     <div className="console">
       <div className="console-bar">
-        <button type="button" className={`btn ${device.live ? "checked" : ""}`} aria-pressed={device.live} disabled={!device.portLabel} onClick={() => device.setLive(!device.live)} title="Keep the port open and show what the display and the sketch send">
-          {device.live ? "Connected" : "Keep connected"}
-        </button>
+        {pi ? (
+          <button type="button" className="btn" disabled={!device.portLabel || loadingLog} onClick={() => void loadLog()} title="The program's service state and the last lines it printed">
+            {loadingLog ? "Loading…" : piLog === null ? "Program log" : "Refresh log"}
+          </button>
+        ) : (
+          <button type="button" className={`btn ${device.live ? "checked" : ""}`} aria-pressed={device.live} disabled={!device.portLabel} onClick={() => device.setLive(!device.live)} title="Keep the port open and show what the display and the sketch send">
+            {device.live ? "Connected" : "Keep connected"}
+          </button>
+        )}
         <label className="note"><input type="checkbox" checked={hideOk} onChange={(e) => setHideOk(e.target.checked)} /> hide "ok" replies</label>
         <span className="spacer" />
         <button type="button" className="btn quiet" onClick={device.clearLog} disabled={!device.log.length}>Clear</button>
       </div>
+      {pi && piLog !== null && (
+        <pre className="console-pi-log" aria-label="Program log">{piLog}</pre>
+      )}
       <ol className="console-log" ref={list} aria-live="polite" aria-label="Device console">
-        {shown.length === 0 && <li className="note">{device.portLabel ? "Nothing yet. Keep connected to watch touches and sketch messages." : "Choose the board's port to use the console."}</li>}
+        {shown.length === 0 && (
+          <li className="note">
+            {pi
+              ? device.portLabel
+                ? "Nothing yet. Commands go to the display through the program on the Pi; @request asks the program."
+                : "Set the Pi's address (top right) to use the console."
+              : device.portLabel
+                ? "Nothing yet. Keep connected to watch touches and sketch messages."
+                : "Choose the board's port to use the console."}
+          </li>
+        )}
         {shown.map((e) => {
           const d = e.reply ? describe(e.reply, names) : { text: e.dir === "out" ? `> ${e.text}` : e.text ?? "", cls: e.dir === "out" ? "out" : "note" };
           return (

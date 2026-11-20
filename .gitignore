@@ -4,3 +4,4 @@ dist/
 *.local
 /data/
 out/
+__pycache__/

@@ -2,7 +2,7 @@
 import { useCallback, useState } from "react";
 import { api, type BuildRecord, type ProjectDetail } from "./api.ts";
 import type { Ask } from "./components/Dialog.tsx";
-import { useDevice } from "./device.tsx";
+import { boardKind, useDevice } from "./device.tsx";
 
 export type Parts = "both" | "sketch" | "screen";
 
@@ -25,6 +25,8 @@ export function useFlasher(detail: ProjectDetail | null, reload: () => void, ask
   const device = useDevice();
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [running, setRunning] = useState<number | null>(null);
+  /** What a deploy that runs on the server (Raspberry Pi) is doing, for the status bar. */
+  const [busyLabel, setBusyLabel] = useState<string | null>(null);
 
   const flash = useCallback(
     async (b: BuildRecord, parts: Parts = "both") => {
@@ -34,6 +36,19 @@ export function useFlasher(detail: ProjectDetail | null, reload: () => void, ask
       if (stale && !(await ask({ title: `Flash build #${b.n} anyway?`, body: `The project's board or display changed since this build: ${stale}. Rebuild first unless you know it fits.`, confirm: "Flash anyway", danger: true }))) return;
       const current = Math.max(onDevice(builds, "sketch")?.n ?? 0, onDevice(builds, "screen")?.n ?? 0);
       if (!stale && b.n < current && !(await ask({ title: `Go back to build #${b.n}?`, body: `Build #${current} is on the device now. This puts the older build "${b.label}" back on it.`, confirm: `Flash build #${b.n}` }))) return;
+      if (boardKind(meta.board.fqbn) === "pi") {
+        // the server deploys it over SSH; no USB involved
+        setResult(null);
+        setRunning(b.n);
+        const label = parts === "screen" ? "Uploading the screen on the Pi (about 95 s)" : parts === "sketch" ? "Deploying the program to the Pi" : b.screen?.ok ? "Deploying to the Pi (the screen takes about 95 s)" : "Deploying the program to the Pi";
+        setBusyLabel(label);
+        const r = await api.deploy(meta.id, b.n, parts).catch((e: Error) => ({ status: "failed" as const, message: e.message }));
+        setBusyLabel(null);
+        setRunning(null);
+        setResult({ ok: r.status === "done", text: r.status === "done" ? `Build #${b.n}: ${r.message}.` : `Build #${b.n} failed: ${r.message}` });
+        reload();
+        return;
+      }
       if (!(await device.ensurePort())) return;
       setResult(null);
       setRunning(b.n);
@@ -48,7 +63,7 @@ export function useFlasher(detail: ProjectDetail | null, reload: () => void, ask
     [detail, device, reload, ask],
   );
 
-  return { flash, result, clearResult: () => setResult(null), running };
+  return { flash, result, clearResult: () => setResult(null), running, busyLabel };
 }
 
 export type Flasher = ReturnType<typeof useFlasher>;

@@ -11,7 +11,8 @@ import { config } from "./config.ts";
 import { applyAttrChange, type AttrChange, HmiEditError } from "./hmi-edit.ts";
 import { hubFor } from "./hub.ts";
 import { projectFonts } from "./layout-lint.ts";
-import { BOARDS, boardById } from "./boards.ts";
+import { BOARDS, boardById, isPiBoard } from "./boards.ts";
+import { deployToPi, piDisplay, piHost, piLog, validPiHost } from "./pi.ts";
 import { DISPLAYS, displayByModel } from "./displays.ts";
 import {
   createProject,
@@ -20,6 +21,7 @@ import {
   listBuilds,
   listFiles,
   listProjectSummaries,
+  mainSource,
   markFlashed,
   projectDir,
   readMeta,
@@ -40,7 +42,7 @@ app.get("/api/boards", (c) => c.json(BOARDS));
 
 app.get("/api/displays", (c) => c.json(DISPLAYS));
 
-app.get("/api/config", (c) => c.json({ publicUrl: config.publicUrl }));
+app.get("/api/config", (c) => c.json({ publicUrl: config.publicUrl, piHost: config.pi.host }));
 
 app.get("/api/projects", async (c) => c.json(await listProjectSummaries()));
 
@@ -54,7 +56,7 @@ app.get("/api/projects/:id", async (c) => {
   const id = c.req.param("id");
   const [{ sessionId: _session, sessionAt: _at, sessionContext: _ctx, ...meta }, files, builds, wiring] = await Promise.all([readMeta(id), listFiles(id), listBuilds(id), readWiring(id)]);
   const read = (rel: string) => fs.readFile(safePath(id, rel), "utf8").catch(() => "");
-  const [hmi, hardware, sketch] = await Promise.all([read("nextion/hmi.txt"), read("hardware.md"), read("sketch/sketch.ino")]);
+  const [hmi, hardware, sketch] = await Promise.all([read("nextion/hmi.txt"), read("hardware.md"), read(mainSource(meta))]);
   const fonts = await projectFonts(id);
   return c.json({ meta, files, builds, hmi, hardware, sketch, wiring: wiring.wiring, wiringSource: wiring.source, wiringError: wiring.error, fonts, busy: hubFor(id).busy });
 });
@@ -64,6 +66,12 @@ app.patch("/api/projects/:id", async (c) => {
   const body = await c.req.json();
   if (typeof body.title === "string") meta.title = body.title.slice(0, 80);
   if (typeof body.description === "string") meta.description = body.description.slice(0, 400);
+  if (typeof body.piHost === "string") {
+    const h = body.piHost.trim();
+    if (h && !validPiHost(h)) return c.json({ error: `"${h}" isn't a Pi address; use user@host, e.g. pi@raspberrypi.local` }, 400);
+    if (h) meta.pi = { ...meta.pi, host: h };
+    else delete meta.pi;
+  }
   const board = typeof body.board === "string" && body.board ? boardById(body.board) : undefined;
   const display = typeof body.display === "string" && body.display ? displayByModel(body.display) : undefined;
   if (typeof body.board === "string" && body.board && !board) return c.json({ error: `unknown board: ${body.board}` }, 400);
@@ -140,6 +148,38 @@ app.post("/api/projects/:id/builds/:n/flashed", async (c) => {
   await markFlashed(id, Number(n), body.sketch === true, body.screen === true);
   hubFor(id).broadcast({ type: "project_changed" });
   return c.json({ ok: true });
+});
+
+/** Raspberry Pi projects: deploy a build over SSH (the browser isn't involved). */
+app.post("/api/projects/:id/builds/:n/deploy", async (c) => {
+  const { id, n } = c.req.param();
+  const meta = await readMeta(id);
+  if (!isPiBoard(meta.board.fqbn)) return c.json({ error: "only Raspberry Pi projects deploy from the server" }, 400);
+  const body = await c.req.json().catch(() => ({}));
+  const parts = body.parts === "sketch" || body.parts === "screen" ? body.parts : "both";
+  const b = (await listBuilds(id)).find((x) => x.n === Number(n));
+  if (!b) return c.json({ error: "no such build" }, 404);
+  const dir = path.join(projectDir(id), "builds", String(b.n));
+  const app = parts !== "screen" && b.sketch?.ok && b.sketch.file ? path.join(dir, b.sketch.file) : undefined;
+  const tft = parts !== "sketch" && b.screen?.ok && b.screen.file ? path.join(dir, b.screen.file) : undefined;
+  if (!app && !tft) return c.json({ error: `Build #${b.n} has nothing to deploy for "${parts}".` }, 400);
+  const r = await deployToPi(meta, { app, tft });
+  if (r.ok) await markFlashed(id, b.n, !!app, !!tft);
+  hubFor(id).broadcast({ type: "project_changed" });
+  return c.json({ status: r.ok ? "done" : "failed", message: r.message });
+});
+
+app.post("/api/projects/:id/pi/run", async (c) => {
+  const meta = await readMeta(c.req.param("id"));
+  const body = await c.req.json().catch(() => ({}));
+  const commands = Array.isArray(body.commands) ? body.commands.filter((x: unknown) => typeof x === "string").slice(0, 40) : [];
+  const listen = Math.max(0, Math.min(30, Number(body.listen) || 0));
+  return c.json(await piDisplay(meta, commands, listen));
+});
+
+app.get("/api/projects/:id/pi/log", async (c) => {
+  const meta = await readMeta(c.req.param("id"));
+  return c.json({ ...(await piLog(meta, Number(c.req.query("lines") ?? 60))), host: piHost(meta) });
 });
 
 app.post("/api/projects/:id/screen/attrs", async (c) => {
