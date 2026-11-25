@@ -74,12 +74,15 @@ async function json<T>(r: Response): Promise<T> {
 const send = (url: string, method: string, body?: unknown) =>
   fetch(url, { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
 
+/** Server settings the UI needs. assistant names who runs the chat ("Claude", "Hermes"). */
+export type AppConfig = { publicUrl: string; feedbackRepo: string; assistant: string; provider: "claude" | "hermes" };
+
 export const api = {
   projects: () => fetch("/api/projects").then((r) => json<ProjectSummary[]>(r)),
   project: (id: string) => fetch(`/api/projects/${id}`).then((r) => json<ProjectDetail>(r)),
   boards: () => fetch("/api/boards").then((r) => json<Board[]>(r)),
   displays: () => fetch("/api/displays").then((r) => json<DisplayModel[]>(r)),
-  config: () => fetch("/api/config").then((r) => json<{ publicUrl: string; feedbackRepo: string }>(r)),
+  config: () => fetch("/api/config").then((r) => json<AppConfig>(r)),
   featureRequests: () => fetch("/api/feature-requests").then((r) => json<FeatureRequest[]>(r)),
   addFeatureRequest: (r: { title: string; details: string; kind: FeatureKind }) => send("/api/feature-requests", "POST", r).then((res) => json<FeatureRequest>(res)),
   markFeatureRequestSent: (id: string) => send(`/api/feature-requests/${id}/sent`, "POST").then((r) => json<FeatureRequest>(r)),

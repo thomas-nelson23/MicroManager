@@ -1,7 +1,8 @@
-/** The conversation with Claude: messages, tool steps, flash requests, and the message box. */
+/** The conversation with the assistant (Claude or Hermes): messages, tool steps, flash requests, and the message box. */
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ChatEvent } from "@micromanager/server/protocol";
 import { api } from "../api.ts";
+import { useConfig } from "../catalog.ts";
 import { useDevice } from "../device.tsx";
 import type { ProjectState } from "../useProject.ts";
 import { Icon } from "./Icon.tsx";
@@ -128,6 +129,7 @@ export function ChatPanel({ project, draft, setDraft, focusKey, onCollapse }: Pr
   const box = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const { events, busy, connected } = project;
+  const { assistant, provider } = useConfig();
   const [atBottom, setAtBottom] = useState(true);
   const [unseen, setUnseen] = useState(false);
   const [pictures, setPictures] = useState<Picture[]>([]);
@@ -267,7 +269,7 @@ export function ChatPanel({ project, draft, setDraft, focusKey, onCollapse }: Pr
 
   const canSend = connected && (!!draft.trim() || pictures.length > 0) && !(busy && queued);
   return (
-    <section className="chat" aria-label="Chat with Claude">
+    <section className="chat" aria-label={`Chat with ${assistant}`}>
       <div className="chat-bar">
         <span className="eyebrow">Chat</span>
         <span className={`chat-bar-status ${connected ? "" : "bad"}`}>{!connected ? "reconnecting…" : busy ? `working · ${clock(elapsed)}` : ""}</span>
@@ -277,7 +279,7 @@ export function ChatPanel({ project, draft, setDraft, focusKey, onCollapse }: Pr
           {menu && (
             <div className="menu pop right" role="menu" onMouseLeave={() => setMenu(false)}>
               <button className="item" type="button" role="menuitem" disabled={busy || events.length === 0} onClick={fresh}>New conversation</button>
-              <span className="menu-help">Clears the chat. Claude starts fresh but the project's files stay.</span>
+              <span className="menu-help">Clears the chat. {assistant} starts fresh but the project's files stay.</span>
             </div>
           )}
         </div>
@@ -354,7 +356,7 @@ export function ChatPanel({ project, draft, setDraft, focusKey, onCollapse }: Pr
             aria-label="Message"
             rows={2}
             value={draft}
-            placeholder={busy ? "Type a follow-up. It's sent when Claude finishes…" : "Describe a change to the sketch, the screen or the wiring…"}
+            placeholder={busy ? `Type a follow-up. It's sent when ${assistant} finishes…` : "Describe a change to the sketch, the screen or the wiring…"}
             onChange={(e) => setDraft(e.target.value)}
             onPaste={(e) => {
               const files = [...e.clipboardData.files];
@@ -377,7 +379,7 @@ export function ChatPanel({ project, draft, setDraft, focusKey, onCollapse }: Pr
               className={`btn md quiet ${strong ? "strong-on" : ""}`}
               type="button"
               aria-pressed={strong}
-              title="Think harder: send this message to the stronger model. It uses your Claude plan several times faster, so keep it for tricky problems."
+              title={`Think harder: send this message to the stronger model. It uses ${provider === "hermes" ? "your API credit" : "your Claude plan"} several times faster, so keep it for tricky problems.`}
               onClick={() => setStrong(!strong)}
             >
               Think harder
