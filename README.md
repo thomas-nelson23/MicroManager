@@ -45,7 +45,7 @@ docker run -d --name micromanager --restart unless-stopped \
   -e CLAUDE_CODE_OAUTH_TOKEN='<from `claude setup-token`>' \
   -e VM_HOST='<vm-user>@<vm-ip>' -e VM_USER='<vm-user>' \
   -e VM_JOBROOT='C:\Users\<vm-user>\nxauto' \
-  ghcr.io/thomas-nelson23/nextion-arduino:latest
+  ghcr.io/thomas-nelson23/micromanager:latest
 ```
 
 1. On first start the container creates an SSH key and prints the public half in its log
