@@ -1,5 +1,5 @@
 {
-  "name": "nextion-arduino",
+  "name": "micromanager",
   "private": true,
   "type": "module",
   "workspaces": ["packages/*"],

@@ -1,4 +1,4 @@
-# nextion-arduino: one image with the API server, the built web UI, arduino-cli and the Nextion
+# MicroManager: one image with the API server, the built web UI, arduino-cli and the Nextion
 # build tools. Claude Code comes from the Agent SDK's bundled binary.
 
 # ---- build the web UI ----
@@ -11,7 +11,7 @@ COPY packages/server/package.json packages/server/
 COPY packages/web/package.json packages/web/
 RUN npm ci --ignore-scripts
 COPY packages ./packages
-RUN npm run build -w @nextion-arduino/web
+RUN npm run build -w @micromanager/web
 
 # ---- runtime ----
 FROM node:22-bookworm-slim

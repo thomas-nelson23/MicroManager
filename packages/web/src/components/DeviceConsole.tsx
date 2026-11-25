@@ -3,7 +3,7 @@
  * "Keep connected" is on. Type a Nextion instruction, or "@request" to ask the sketch.
  */
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import type { NexReply } from "@nextion-arduino/flasher";
+import type { NexReply } from "@micromanager/flasher";
 import { useDevice, type LogEntry } from "../device.tsx";
 import { parseHmi } from "../hmi.ts";
 import "./screen-tools.css";

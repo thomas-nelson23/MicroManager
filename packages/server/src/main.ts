@@ -13,6 +13,7 @@ import { hubFor } from "./hub.ts";
 import { projectFonts } from "./layout-lint.ts";
 import { BOARDS, boardById } from "./boards.ts";
 import { DISPLAYS, displayByModel } from "./displays.ts";
+import { addFeatureRequest, deleteFeatureRequest, listFeatureRequests, markFeatureRequestSent, parseFeatureRequest } from "./feature-requests.ts";
 import {
   createProject,
   deleteProject,
@@ -40,7 +41,25 @@ app.get("/api/boards", (c) => c.json(BOARDS));
 
 app.get("/api/displays", (c) => c.json(DISPLAYS));
 
-app.get("/api/config", (c) => c.json({ publicUrl: config.publicUrl }));
+app.get("/api/config", (c) => c.json({ publicUrl: config.publicUrl, feedbackRepo: config.feedbackRepo }));
+
+app.get("/api/feature-requests", async (c) => c.json(await listFeatureRequests()));
+
+app.post("/api/feature-requests", async (c) => {
+  const parsed = parseFeatureRequest(await c.req.json().catch(() => ({})));
+  if (typeof parsed === "string") return c.json({ error: parsed }, 400);
+  return c.json(await addFeatureRequest(parsed), 201);
+});
+
+app.post("/api/feature-requests/:id/sent", async (c) => {
+  const item = await markFeatureRequestSent(c.req.param("id"));
+  return item ? c.json(item) : c.json({ error: "no such request" }, 404);
+});
+
+app.delete("/api/feature-requests/:id", async (c) => {
+  const ok = await deleteFeatureRequest(c.req.param("id"));
+  return ok ? c.json({ ok }) : c.json({ error: "no such request" }, 404);
+});
 
 app.get("/api/projects", async (c) => c.json(await listProjectSummaries()));
 
@@ -187,7 +206,7 @@ if (config.webDist) {
 }
 
 const server = serve({ fetch: app.fetch, port: config.port, hostname: config.host }, (info) => {
-  console.log(`nextion-arduino server on http://${config.host}:${info.port} · data ${config.dataDir}`);
+  console.log(`MicroManager server on http://${config.host}:${info.port} · data ${config.dataDir}`);
 });
 
 const wss = new WebSocketServer({ noServer: true, maxPayload: 32 * 1024 * 1024 });

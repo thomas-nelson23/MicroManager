@@ -4,8 +4,8 @@
  * A board without pin data gets the same picture from the pins the wiring names (a connection map).
  */
 import { useMemo, useState } from "react";
-import type { Board, BoardPin } from "@nextion-arduino/server/boards";
-import { checkWiring, type Connection, type Issue, resolveWiring, sketchPins, type Wiring } from "@nextion-arduino/server/wiring";
+import type { Board, BoardPin } from "@micromanager/server/boards";
+import { checkWiring, type Connection, type Issue, resolveWiring, sketchPins, type Wiring } from "@micromanager/server/wiring";
 import { Icon } from "./Icon.tsx";
 
 const PITCH = 22;

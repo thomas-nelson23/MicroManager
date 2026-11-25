@@ -1,5 +1,5 @@
-import { parseIntelHex, flashNanoEvery, openDisplay, resetBoard, type Progress } from "@nextion-arduino/flasher";
-import { WebSerialTransport } from "@nextion-arduino/flasher/web";
+import { parseIntelHex, flashNanoEvery, openDisplay, resetBoard, type Progress } from "@micromanager/flasher";
+import { WebSerialTransport } from "@micromanager/flasher/web";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const logEl = $<HTMLPreElement>("log");

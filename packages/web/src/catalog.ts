@@ -20,7 +20,7 @@ function useLoaded<T>(load: () => Promise<T>, initial: T): T {
 
 const NO_BOARDS: Board[] = [];
 const NO_DISPLAYS: DisplayModel[] = [];
-const NO_CONFIG = { publicUrl: "" };
+const NO_CONFIG = { publicUrl: "", feedbackRepo: "" };
 export const useBoards = () => useLoaded(boards, NO_BOARDS);
 export const useDisplays = () => useLoaded(displays, NO_DISPLAYS);
 export const useConfig = () => useLoaded(config, NO_CONFIG);

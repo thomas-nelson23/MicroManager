@@ -1,4 +1,4 @@
-# nextion-arduino: spec
+# MicroManager: spec
 
 A self-hosted web app, running as one Docker container on Unraid. You create Arduino + Nextion projects by
 chatting with Claude Code built into the container, preview the screen, and flash both the Arduino sketch
@@ -10,7 +10,7 @@ Decisions below were agreed on 2026-11-15. Anything marked *later* is out of sco
 
 ```
  Browser (any PC on the LAN, Chrome/Edge)            Unraid
- ├─ web UI  <──── HTTP + WebSocket ────────────────> nextion-arduino container
+ ├─ web UI  <──── HTTP + WebSocket ────────────────> MicroManager container   
  │   ├─ chat with Claude                              ├─ Node backend + Claude Agent SDK
  │   ├─ files / Nextion preview                       ├─ arduino-cli + AVR cores
  │   └─ flash panel (Web Serial)                      ├─ /data (appdata): projects, builds, ~/.claude
@@ -18,7 +18,7 @@ Decisions below were agreed on 2026-11-15. Anything marked *later* is out of sco
               └─ Serial1 ── Nextion display
 ```
 
-- Nothing depends on RadioShack. Testing happens there first in Docker (`http://localhost:8765`).
+- Nothing depends on one particular PC. Testing happens first on a Linux PC in Docker (`http://localhost:8765`).
 - The Windows VM (already on Unraid) stays the Nextion compiler: Nextion Editor's hidden automation mode,
   driven over SSH and an interactive scheduled task. The VM user signs in to the desktop manually; the
   server reports a clear error when nobody is signed in.
@@ -43,8 +43,8 @@ Decisions below were agreed on 2026-11-15. Anything marked *later* is out of sco
   container.
 - **Config:** environment variables, e.g. VM host/user, VM job root, editor path, default display model.
   The SSH key for the VM is in a mounted secret.
-- **Updates:** GitHub Actions builds `ghcr.io/thomas-nelson23/nextion-arduino` on every push to `main`. The
-  repo is private, so Unraid pulls with a read-only package token. Install uses an Unraid Docker template.
+- **Updates:** GitHub Actions builds `ghcr.io/<owner>/<repo>` on every push to `main`. A private image is
+  pulled with a read-only package token. Install uses an Unraid Docker template.
 
 ## 3. Projects
 
@@ -103,7 +103,7 @@ Every built sketch includes it. The user's code calls `NexPass.begin(Serial1)` a
 ## 6. Build order
 
 1. **Browser flashing test:** a standalone test page on localhost that flashes the Nano Every and uploads
-   a TFT, checked against the real hardware on RadioShack. This is the riskiest part, so it goes first.
+   a TFT, checked against the real hardware on a Linux PC. This is the riskiest part, so it goes first.
 2. NexPass library, plus TFT upload through a running sketch.
 3. Backend: projects, Agent SDK chat, the VM build service, arduino-cli builds.
 4. Web UI: chat, files, preview, flash panel; then the other board protocols.

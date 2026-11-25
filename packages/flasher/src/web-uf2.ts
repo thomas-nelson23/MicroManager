@@ -17,6 +17,7 @@ type PickerWindow = Window & { showDirectoryPicker?(o: { id?: string; mode?: "re
 
 export const canWriteDrives = () => typeof window !== "undefined" && typeof (window as PickerWindow).showDirectoryPicker === "function";
 
+// The IndexedDB name predates the MicroManager rename; keep it so browsers keep their saved RPI-RP2 drive.
 const DB = "nextion-arduino";
 const STORE = "handles";
 const KEY = "rpi-rp2";
