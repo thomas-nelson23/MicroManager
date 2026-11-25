@@ -23,10 +23,10 @@ import {
   type Nextion,
   type NexReply,
   type SerialTransport,
-} from "@nextion-arduino/flasher";
-import { WebSerialTransport } from "@nextion-arduino/flasher/web";
-import { WebHidHalfKay } from "@nextion-arduino/flasher/web-hid";
-import { canWriteDrives, Uf2Drive } from "@nextion-arduino/flasher/web-uf2";
+} from "@micromanager/flasher";
+import { WebSerialTransport } from "@micromanager/flasher/web";
+import { WebHidHalfKay } from "@micromanager/flasher/web-hid";
+import { canWriteDrives, Uf2Drive } from "@micromanager/flasher/web-uf2";
 
 /** How the current project's board is flashed (from its FQBN). */
 export type BoardKind = "nano-every" | "teensy" | "rp2040";

@@ -1,15 +1,18 @@
-# nextion-arduino
+# MicroManager
 
 A self-hosted web app for building Arduino + Nextion projects by chatting with Claude, then flashing
 the sketch and the screen from the browser to hardware on whichever computer you're using.
 Design and decisions: [SPEC.md](SPEC.md).
+
+Ideas and requests are welcome: use the app's **Feature requests** tab (it saves the request and can open it
+as a GitHub issue here), or [open an issue](../../issues/new?template=feature_request.yml) directly.
 
 ## Packages
 
 | package | what it is |
 |---|---|
 | `packages/server` | Node backend: projects on disk, Claude chat (Claude Agent SDK) with build/flash/display tools, sketch builds (arduino-cli) and screen builds (Nextion Editor on a Windows VM over SSH). |
-| `packages/web` | React UI (Steeze design system): project list, and a project page with chat beside a workbench of tabs: Screen (preview), Wiring (board pinout with the project's connections and checks), Code and Builds. Flashing over Web Serial. |
+| `packages/web` | React UI (Steeze design system): project list, a Feature requests tab, and a project page with chat beside a workbench of tabs: Screen (preview), Wiring (board pinout with the project's connections and checks), Code and Builds. Flashing over Web Serial. |
 | `packages/flasher` | Web Serial / WebHID / Node serial library: Nano Every flashing (jtag2updi), Teensy 4.1 flashing (HalfKay), RP2040 UF2 checks and Nextion TFT upload. |
 | `packages/flash-test` | Standalone page for testing the flasher against hardware. |
 | `packages/server/template/sketch/NexPass.h` | The passthrough every sketch includes so the browser can reach the display through the running sketch. |
@@ -24,8 +27,8 @@ Python 3, OpenSSH, and either a Claude Code login on this machine (or `CLAUDE_CO
 ```bash
 npm install
 cp packages/server/.env.example packages/server/.env   # then set the VM details
-npm run dev -w @nextion-arduino/server                 # API on :8765, projects in ./data
-npm run dev -w @nextion-arduino/web                    # UI on http://localhost:5174
+npm run dev -w @micromanager/server                 # API on :8765, projects in ./data
+npm run dev -w @micromanager/web                    # UI on http://localhost:5174
 ```
 
 Flashing needs Chrome or Edge (Web Serial, plus WebHID for a Teensy) on `localhost` or HTTPS. A Teensy

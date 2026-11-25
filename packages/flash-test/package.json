@@ -1,5 +1,5 @@
 {
-  "name": "@nextion-arduino/flash-test",
+  "name": "@micromanager/flash-test",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,5 +8,5 @@
     "dev": "vite --host 127.0.0.1 --port 5173 --strictPort",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": { "@nextion-arduino/flasher": "0.1.0" }
+  "dependencies": { "@micromanager/flasher": "0.1.0" }
 }

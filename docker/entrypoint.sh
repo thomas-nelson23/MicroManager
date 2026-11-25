@@ -10,7 +10,7 @@ if [ -f /config/ssh/id_ed25519 ]; then
 fi
 # First start without a key: create one, so its public half can be added to the VM.
 if [ ! -f "$HOME/.ssh/id_ed25519" ]; then
-  ssh-keygen -q -t ed25519 -N "" -C "nextion-arduino" -f "$HOME/.ssh/id_ed25519"
+  ssh-keygen -q -t ed25519 -N "" -C "micromanager" -f "$HOME/.ssh/id_ed25519"
   echo "Created an SSH key for the Nextion VM. Add this public key to the VM (see INSTALL-UNRAID.md):"
   cat "$HOME/.ssh/id_ed25519.pub"
 fi

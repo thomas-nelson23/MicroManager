@@ -1,6 +1,6 @@
 /** One project's live state: details over REST, chat events and device requests over a WebSocket. */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChatEvent, ClientMessage, ServerMessage } from "@nextion-arduino/server/protocol";
+import type { ChatEvent, ClientMessage, ServerMessage } from "@micromanager/server/protocol";
 import { api, type ProjectDetail } from "./api.ts";
 import { useDevice } from "./device.tsx";
 

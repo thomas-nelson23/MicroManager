@@ -1,12 +1,12 @@
 Performing 1200-bps touch reset on serial port /dev/ttyACM0
-"/home/spleebag/.arduino15/packages/arduino/tools/avrdude/6.3.0-arduino17/bin/avrdude" "-C/home/spleebag/.arduino15/packages/arduino/tools/avrdude/6.3.0-arduino17/etc/avrdude.conf" -v -V -patmega4809 -cjtag2updi -P/dev/ttyACM0 -vvvv  -b115200 -e -D "-Uflash:w:build/NexBridge.ino.hex:i" "-Ufuse2:w:0x01:m" "-Ufuse5:w:0xC9:m" "-Ufuse8:w:0x00:m" {upload.extra_files}
+"/home/user/.arduino15/packages/arduino/tools/avrdude/6.3.0-arduino17/bin/avrdude" "-C/home/user/.arduino15/packages/arduino/tools/avrdude/6.3.0-arduino17/etc/avrdude.conf" -v -V -patmega4809 -cjtag2updi -P/dev/ttyACM0 -vvvv  -b115200 -e -D "-Uflash:w:build/NexBridge.ino.hex:i" "-Ufuse2:w:0x01:m" "-Ufuse5:w:0xC9:m" "-Ufuse8:w:0x00:m" {upload.extra_files}
 
 avrdude: Version 6.3-20190619
          Copyright (c) 2000-2005 Brian Dean, http://www.bdmicro.com/
          Copyright (c) 2007-2014 Joerg Wunsch
 
-         System wide configuration file is "/home/spleebag/.arduino15/packages/arduino/tools/avrdude/6.3.0-arduino17/etc/avrdude.conf"
-         User configuration file is "/home/spleebag/.avrduderc"
+         System wide configuration file is "/home/user/.arduino15/packages/arduino/tools/avrdude/6.3.0-arduino17/etc/avrdude.conf"
+         User configuration file is "/home/user/.avrduderc"
          User configuration file does not exist or is not a regular file, skipping
 
          Using Port                    : /dev/ttyACM0

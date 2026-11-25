@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ago, api, type ProjectSummary } from "../api.ts";
 import { displayLabel, useBoards, useDisplays } from "../catalog.ts";
 import { useDialog } from "../components/Dialog.tsx";
+import { AppNav } from "../components/AppNav.tsx";
 import { Icon } from "../components/Icon.tsx";
 
 type Sort = "updated" | "name" | "board";
@@ -22,7 +23,7 @@ export function ProjectList({ navigate }: { navigate: (to: string) => void }) {
 
   const load = () => api.projects().then(setProjects, (e: Error) => setError(e.message));
   useEffect(() => {
-    document.title = "Projects · Nextion Arduino";
+    document.title = "Projects · MicroManager";
     void load();
   }, []);
 
@@ -68,9 +69,7 @@ export function ProjectList({ navigate }: { navigate: (to: string) => void }) {
   const defaultDisplay = displays[0];
   return (
     <div className="page app">
-      <header className="appbar">
-        <span className="wordmark">Nextion <b>Arduino</b></span>
-      </header>
+      <AppNav current="projects" navigate={navigate} />
       <div className="edge" />
       <main className="list-main">
         <div className="list-head">

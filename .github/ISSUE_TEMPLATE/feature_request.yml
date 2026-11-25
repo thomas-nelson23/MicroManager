@@ -1,0 +1,23 @@
+name: Feature request
+description: Ask for something MicroManager should do (the app's Feature requests tab fills this in for you).
+title: "Feature: "
+labels: ["enhancement"]
+body:
+  - type: input
+    id: kind
+    attributes:
+      label: Kind
+      description: New feature, support a board, support a display, improve something, or other.
+      placeholder: Support a board
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: What should it do, and what are you building that needs it?
+    validations:
+      required: true
+  - type: input
+    id: setup
+    attributes:
+      label: Your setup (optional)
+      description: Board, display model, and how you run MicroManager (Unraid, Docker, local).

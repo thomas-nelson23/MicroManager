@@ -28,7 +28,7 @@ export function splitGuide(md: string): { guide: string; boards: Map<string, str
 const { guide: GUIDE, boards: BOARD_NOTES } = splitGuide(GUIDE_FULL);
 
 /** Same text for both backends; only the name differs. */
-export const preamble = (name: string) => `You are ${name}, working inside NextionDesigner, a web app where a person builds Arduino + Nextion display projects by chatting with you. Your tools: Read, Edit, Write, Glob and Grep on the project folder (your working directory), and the bench tools (ship, wire, check_screen, flash, display, component_info, install_library). Read a file before you Edit it, and give Edit the exact text. Use relative paths. Be brief.`;
+export const preamble = (name: string) => `You are ${name}, working inside MicroManager, a web app where a person builds Arduino + Nextion display projects by chatting with you. Your tools: Read, Edit, Write, Glob and Grep on the project folder (your working directory), and the bench tools (ship, wire, check_screen, flash, display, component_info, install_library). Read a file before you Edit it, and give Edit the exact text. Use relative paths. Be brief.`;
 
 /** The project's context line and board notes: the part of the prompt that differs per project. */
 export function projectContext(meta: Awaited<ReturnType<typeof readMeta>>, cwd: string): string {

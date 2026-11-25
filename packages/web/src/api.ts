@@ -10,10 +10,21 @@ export interface ProjectMeta {
   updatedAt: string;
 }
 
-import type { Board } from "@nextion-arduino/server/boards";
-import type { DisplayModel } from "@nextion-arduino/server/displays";
-import type { Wiring } from "@nextion-arduino/server/wiring";
+import type { Board } from "@micromanager/server/boards";
+import type { DisplayModel } from "@micromanager/server/displays";
+import type { Wiring } from "@micromanager/server/wiring";
 export type { Board, DisplayModel, Wiring };
+
+/** Mirrors packages/server/src/feature-requests.ts. */
+export type FeatureKind = "feature" | "board" | "display" | "improvement" | "other";
+export interface FeatureRequest {
+  id: string;
+  title: string;
+  details: string;
+  kind: FeatureKind;
+  createdAt: string;
+  sentAt?: string;
+}
 
 export interface ProjectSummary extends ProjectMeta {
   lastBuild?: { n: number; ok: boolean; createdAt: string };
@@ -64,7 +75,7 @@ const send = (url: string, method: string, body?: unknown) =>
   fetch(url, { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
 
 /** Server settings the UI needs. assistant names who runs the chat ("Claude", "Hermes"). */
-export type AppConfig = { publicUrl: string; assistant: string; provider: "claude" | "hermes" };
+export type AppConfig = { publicUrl: string; feedbackRepo: string; assistant: string; provider: "claude" | "hermes" };
 
 export const api = {
   projects: () => fetch("/api/projects").then((r) => json<ProjectSummary[]>(r)),
@@ -72,6 +83,10 @@ export const api = {
   boards: () => fetch("/api/boards").then((r) => json<Board[]>(r)),
   displays: () => fetch("/api/displays").then((r) => json<DisplayModel[]>(r)),
   config: () => fetch("/api/config").then((r) => json<AppConfig>(r)),
+  featureRequests: () => fetch("/api/feature-requests").then((r) => json<FeatureRequest[]>(r)),
+  addFeatureRequest: (r: { title: string; details: string; kind: FeatureKind }) => send("/api/feature-requests", "POST", r).then((res) => json<FeatureRequest>(res)),
+  markFeatureRequestSent: (id: string) => send(`/api/feature-requests/${id}/sent`, "POST").then((r) => json<FeatureRequest>(r)),
+  removeFeatureRequest: (id: string) => send(`/api/feature-requests/${id}`, "DELETE").then((r) => json<{ ok: boolean }>(r)),
   create: (title: string, board?: string, display?: string) => send("/api/projects", "POST", { title, board, display }).then((r) => json<ProjectMeta>(r)),
   update: (id: string, patch: { title?: string; description?: string; board?: string; display?: string }) =>
     send(`/api/projects/${id}`, "PATCH", patch).then((r) => json<ProjectMeta>(r)),

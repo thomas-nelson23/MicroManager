@@ -95,7 +95,7 @@ async function httpComplete(body: unknown, signal: AbortSignal): Promise<Complet
       "content-type": "application/json",
       ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
       // OpenRouter shows these on its activity page; harmless elsewhere
-      "x-title": "Nextion Arduino",
+      "x-title": "MicroManager",
     },
     body: JSON.stringify(body),
     signal: AbortSignal.any([signal, AbortSignal.timeout(timeout * 1000)]),

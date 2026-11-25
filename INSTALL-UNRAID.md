@@ -1,4 +1,4 @@
-# Installing nextion-arduino on Unraid
+# Installing MicroManager on Unraid
 
 **Audience:** the AI (or person) that manages the Unraid server. You have shell access to Unraid. You
 don't need this repository's code: the server runs a published Docker image.
@@ -10,20 +10,20 @@ happens in the owner's browser (Web Serial) on whatever computer the hardware is
 container never touches USB.
 
 ```
- Owner's browser (Chrome/Edge) ──HTTP──> nextion-arduino container (Unraid, port 8765)
+ Owner's browser (Chrome/Edge) ──HTTP──> MicroManager container   (Unraid, port 8765)
    └─ USB: Arduino + Nextion                ├─ /data  (appdata: projects, chat, Claude sessions, SSH key)
-                                            └─ ssh ──> Windows VM 10.1.1.62 (Nextion Editor, user "monta")
+                                            └─ ssh ──> Windows VM (Nextion Editor)
 ```
 
 ## Facts
 
 | | |
 |---|---|
-| Image | `ghcr.io/thomas-nelson23/nextion-arduino:latest`, **private** (needs a registry login) |
+| Image | `ghcr.io/thomas-nelson23/nextion-arduino:latest` (public once the repo and its package are public; while private it needs a registry login) |
 | Built by | GitHub Actions on every push to `main` of `thomas-nelson23/nextion-arduino` |
 | Port | `8765/tcp` (web UI + API + WebSocket) |
-| Volume | `/data` → `/mnt/user/appdata/nextion-arduino` |
-| Unraid template | `unraid/nextion-arduino.xml` in the repo (contents also below) |
+| Volume | `/data` → `/mnt/user/appdata/micromanager` |
+| Unraid template | `unraid/micromanager.xml` in the repo (contents also below) |
 | Health | `GET http://<unraid>:8765/api/health` returns `{"ok":true}` |
 | Runs as | root inside the container (the same as most Unraid containers); no privileged mode, no devices |
 
@@ -33,9 +33,9 @@ container never touches USB.
 | `HERMES_API_KEY` | for Hermes | Instead of Claude: a key for an OpenAI-compatible API serving a Hermes model (OpenRouter by default). Not needed for a local Ollama. Secret, like the Claude token. |
 | `HERMES_BASE_URL` / `HERMES_MODEL` / `HERMES_STRONG_MODEL` | no | `https://openrouter.ai/api/v1` / `nousresearch/hermes-4-70b` / `nousresearch/hermes-4-405b` (defaults). See README, "Chat: Claude or Hermes". |
 | `AI_PROVIDER` | no | `claude` or `hermes`. Unset: Hermes when only Hermes settings are given, Claude otherwise. |
-| `VM_HOST` | yes | `monta@10.1.1.62` |
-| `VM_USER` | yes | `monta` |
-| `VM_JOBROOT` | yes | `C:\Users\monta\nxauto` |
+| `VM_HOST` | yes | `<vm-user>@<vm-ip>` |
+| `VM_USER` | yes | `<vm-user>`, the Windows account signed in to the VM desktop |
+| `VM_JOBROOT` | yes | `C:\Users\<vm-user>\nxauto` |
 | `VM_EDITOR` | no | `C:\Program Files (x86)\Nextion Editor\Nextion Editor.exe` (default) |
 | `DISPLAY_SERIES` / `DISPLAY_MODEL` | no | `Intelligent` / `NX4827P043_011` (defaults for new projects) |
 | `CLAUDE_CHAT_MODEL` | no | `claude-sonnet-5-5` (default): the model for everyday chat turns |
@@ -44,12 +44,13 @@ container never touches USB.
 | `CHAT_MAX_CONTEXT` | no | `60000` (default): start a fresh conversation once the last one passed this many tokens |
 | `CLAUDE_EFFORT` | no | `medium` (default); `low`, `high`, `xhigh` or `max` |
 | `PUBLIC_URL` | no | The HTTPS address of the app, e.g. `https://arduino.example.com`. When someone opens the app over plain HTTP, where browsers block flashing, the page links here. |
+| `FEEDBACK_REPO` | no | `thomas-nelson23/nextion-arduino` (default): the GitHub repo the **Feature requests** tab opens issues on. Set it empty to hide the GitHub button. |
 
 ## Before you start: what to get from the owner
 
 1. **Confirmation that the image exists.** The PR that adds the Docker build must be merged to `main`,
    and the "Image" workflow must have finished. Check the repo's Actions tab, or run step 1 below.
-2. **A GitHub token for pulling the private image:** a classic personal access token with only
+2. **Only while the image is private, a GitHub token for pulling it:** a classic personal access token with only
    `read:packages`. The owner creates it at github.com → Settings → Developer settings → Personal access
    tokens. You use it once for `docker login`, and don't store it anywhere else.
 3. **The Claude token** from `claude setup-token`.
@@ -57,7 +58,9 @@ container never touches USB.
 
 ## Steps
 
-### 1. Log in to GHCR and pull
+### 1. Pull the image
+
+Skip the `docker login` line when the image is public.
 
 ```bash
 echo '<github-token>' | docker login ghcr.io -u thomas-nelson23 --password-stdin
@@ -70,25 +73,25 @@ of "Before you start").
 ### 2. Create the appdata folder
 
 ```bash
-mkdir -p /mnt/user/appdata/nextion-arduino
+mkdir -p /mnt/user/appdata/micromanager
 ```
 
 ### 3. Add the container
 
 **Preferred: the Unraid template.** Save the XML at the end of this file as
-`/boot/config/plugins/dockerMan/templates-user/my-nextion-arduino.xml`. Then in the Unraid web UI go
-to Docker → Add Container → Template "nextion-arduino", fill in **Claude token**, check the VM values, and
+`/boot/config/plugins/dockerMan/templates-user/my-micromanager.xml`. Then in the Unraid web UI go
+to Docker → Add Container → Template "micromanager", fill in **Claude token**, check the VM values, and
 Apply. The container then shows up in the Docker tab with the update button and a WebUI link.
 
 **Equivalent `docker run`** (for checking, or if the template route isn't possible):
 
 ```bash
-docker run -d --name nextion-arduino --restart unless-stopped \
+docker run -d --name micromanager --restart unless-stopped \
   -p 8765:8765 \
-  -v /mnt/user/appdata/nextion-arduino:/data \
+  -v /mnt/user/appdata/micromanager:/data \
   -e CLAUDE_CODE_OAUTH_TOKEN='<claude-token>' \
-  -e VM_HOST='monta@10.1.1.62' -e VM_USER='monta' \
-  -e VM_JOBROOT='C:\Users\monta\nxauto' \
+  -e VM_HOST='<vm-user>@<vm-ip>' -e VM_USER='<vm-user>' \
+  -e VM_JOBROOT='C:\Users\<vm-user>\nxauto' \
   ghcr.io/thomas-nelson23/nextion-arduino:latest
 ```
 
@@ -97,12 +100,12 @@ Use one or the other, not both (same name and port).
 ### 4. Get the container's SSH public key
 
 On first start, the container creates an SSH key in `/data/home/.ssh/` (that is,
-`/mnt/user/appdata/nextion-arduino/home/.ssh/`) and prints the public half in its log:
+`/mnt/user/appdata/micromanager/home/.ssh/`) and prints the public half in its log:
 
 ```bash
-docker logs nextion-arduino 2>&1 | grep -A1 'Created an SSH key'
+docker logs micromanager 2>&1 | grep -A1 'Created an SSH key'
 # or
-cat /mnt/user/appdata/nextion-arduino/home/.ssh/id_ed25519.pub
+cat /mnt/user/appdata/micromanager/home/.ssh/id_ed25519.pub
 ```
 
 To use an existing key instead, mount it read-only at `/config/ssh/id_ed25519` (plus `.pub`). The
@@ -110,23 +113,23 @@ entrypoint copies it in with the right permissions.
 
 ### 5. Authorize that key on the Windows VM
 
-The VM runs Windows OpenSSH, and `monta` is an administrator, so Windows reads keys from
-`C:\ProgramData\ssh\administrators_authorized_keys`, **not** from the user's own `.ssh` folder. The owner
-already has key access from their Linux PC ("RadioShack"), so the easiest route is for them to run this
+The VM runs Windows OpenSSH, and if the VM user is an administrator, so Windows reads keys from
+`C:\ProgramData\ssh\administrators_authorized_keys`, **not** from the user's own `.ssh` folder. If the owner
+already has key access from another PC, the easiest route is for them to run this
 there, with the public key from step 4 pasted in:
 
 ```bash
-ssh monta@10.1.1.62 "Add-Content -Path C:\ProgramData\ssh\administrators_authorized_keys -Value 'ssh-ed25519 AAAA... nextion-arduino'"
+ssh <vm-user>@<vm-ip> "Add-Content -Path C:\ProgramData\ssh\administrators_authorized_keys -Value 'ssh-ed25519 AAAA... micromanager'"
 ```
 
 PowerShell is the VM's SSH shell, so that command runs as written. Then test from Unraid:
 
 ```bash
-docker exec nextion-arduino ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
-  -i /data/home/.ssh/id_ed25519 monta@10.1.1.62 whoami
+docker exec micromanager ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
+  -i /data/home/.ssh/id_ed25519 <vm-user>@<vm-ip> whoami
 ```
 
-This should print the VM's user, for example `win11vm\monta`. If the key is rejected, check the
+This should print the VM's user, for example `<vm-name>\<vm-user>`. If the key is rejected, check the
 key file's permissions on the VM (only Administrators and SYSTEM may have access) and that the line was
 added whole.
 
@@ -134,7 +137,7 @@ added whole.
 
 ```bash
 curl -s http://localhost:8765/api/health                          # {"ok":true}
-docker exec nextion-arduino arduino-cli core list                 # arduino:avr and arduino:megaavr
+docker exec micromanager arduino-cli core list                 # arduino:avr and arduino:megaavr
 ```
 
 Then have the owner open `http://<unraid-ip>:8765/` and:
@@ -151,8 +154,8 @@ blocked there until one of these is done:
 - **Per browser (quick):** in Chrome/Edge open
   `chrome://flags/#unsafely-treat-insecure-origin-as-secure`, add `http://<unraid-ip>:8765`, and
   relaunch. This needs doing once on each computer that flashes.
-- **HTTPS (better, later):** the owner already runs a Cloudflare tunnel on this server. A hostname
-  such as `nextion.<their-domain>` pointing at `http://<unraid-ip>:8765` gives real HTTPS. **The app
+- **HTTPS (better, later):** if the owner runs a Cloudflare tunnel (or another
+  reverse proxy), a hostname such as `micromanager.<their-domain>` pointing at `http://<unraid-ip>:8765` gives real HTTPS. **The app
   has no login of its own**, so put Cloudflare Access (an email/SSO policy limited to the owner) in front
   before exposing it, and make sure WebSockets are allowed (the default). Don't do this without the
   owner's go-ahead.
@@ -162,13 +165,21 @@ Everything except flashing (chat, builds, previews) works over plain HTTP.
 ## Updates
 
 Every push to `main` publishes a new `latest`. In Unraid: Docker tab → "Check for updates" → update
-`nextion-arduino`. With `docker run`: `docker pull …:latest`, then remove and re-run the container. All
+`micromanager`. With `docker run`: `docker pull …:latest`, then remove and re-run the container. All
 state is in `/data`, so updates keep projects, chat history, libraries and the SSH key.
+
+### Installs from before the MicroManager rename
+
+The app used to be called nextion-arduino. An existing container named `nextion-arduino` with its data in
+`/mnt/user/appdata/nextion-arduino` keeps working as it is: the image name hasn't changed, so "Check for
+updates" still finds new versions. Renaming the container or its appdata folder is optional and purely
+cosmetic. If the GitHub repository is ever renamed, the image name changes with it
+(`ghcr.io/<owner>/<repo>`), and the container's Repository field has to be pointed at the new name.
 
 ## Moving existing projects (optional)
 
 Projects made while testing on the owner's PC live in that PC's checkout under `data/projects/`.
-To bring them over, copy each project folder into `/mnt/user/appdata/nextion-arduino/projects/`. The
+To bring them over, copy each project folder into `/mnt/user/appdata/micromanager/projects/`. The
 chat history comes along, but Claude's memory of those conversations doesn't (it was stored on the PC),
 so the next message starts a fresh Claude session in the same project.
 
@@ -178,17 +189,17 @@ so the next message starts a fresh Claude session in the same project.
 |---|---|
 | Chat says it stopped with an authentication error | `CLAUDE_CODE_OAUTH_TOKEN` is missing, wrong or expired. Have the owner run `claude setup-token` again and update the variable. |
 | Screen build: "no result came back from the VM" | The VM is off, unreachable on port 22, or the key isn't authorized (step 5). Test with the `docker exec … whoami` command. |
-| Screen build: "editor process did not start" | Nobody is signed in to the VM's desktop. Nextion Editor runs in that session, so the owner has to sign in as `monta`. |
+| Screen build: "editor process did not start" | Nobody is signed in to the VM's desktop. Nextion Editor runs in that session, so the owner has to sign in as the VM user. |
 | Sketch build: a header file is missing | Claude can install libraries itself (it has a tool for that). The libraries persist in `/data/arduino`. |
 | Flash button: "This browser can't reach USB devices" | Use Chrome or Edge, and see step 7 for plain-HTTP addresses. |
 | Port 8765 already used | Map another host port (`-p 9876:8765` / the template's port field). The app doesn't care. |
 
-## Template XML (`unraid/nextion-arduino.xml`)
+## Template XML (`unraid/micromanager.xml`)
 
 ```xml
 <?xml version="1.0"?>
 <Container version="2">
-  <Name>nextion-arduino</Name>
+  <Name>micromanager</Name>
   <Repository>ghcr.io/thomas-nelson23/nextion-arduino:latest</Repository>
   <Registry>https://github.com/thomas-nelson23/nextion-arduino/pkgs/container/nextion-arduino</Registry>
   <Network>bridge</Network>
@@ -200,16 +211,16 @@ so the next message starts a fresh Claude session in the same project.
   <Category>Tools: Productivity:</Category>
   <WebUI>http://[IP]:[PORT:8765]/</WebUI>
   <Config Name="Web UI port" Target="8765" Default="8765" Mode="tcp" Description="HTTP port of the web UI and API." Type="Port" Display="always" Required="true" Mask="false">8765</Config>
-  <Config Name="Data" Target="/data" Default="/mnt/user/appdata/nextion-arduino" Mode="rw" Description="Projects, builds, chat history, Claude sessions, Arduino libraries and the container's SSH key." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/nextion-arduino</Config>
+  <Config Name="Data" Target="/data" Default="/mnt/user/appdata/micromanager" Mode="rw" Description="Projects, builds, chat history, Claude sessions, Arduino libraries and the container's SSH key." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/micromanager</Config>
   <Config Name="Claude token" Target="CLAUDE_CODE_OAUTH_TOKEN" Default="" Mode="" Description="From `claude setup-token` (valid for a year). Powers the chat. Leave empty to use Hermes instead." Type="Variable" Display="always" Required="false" Mask="true"></Config>
   <Config Name="Hermes API key" Target="HERMES_API_KEY" Default="" Mode="" Description="Instead of Claude: an API key for an OpenAI-compatible server running a Hermes model (OpenRouter by default). Not needed for a local server such as Ollama." Type="Variable" Display="always" Required="false" Mask="true"></Config>
   <Config Name="Hermes API address" Target="HERMES_BASE_URL" Default="https://openrouter.ai/api/v1" Mode="" Description="OpenAI-compatible API, up to /v1. E.g. https://openrouter.ai/api/v1, https://inference-api.nousresearch.com/v1, or http://[OLLAMA-IP]:11434/v1." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="Hermes model" Target="HERMES_MODEL" Default="nousresearch/hermes-4-70b" Mode="" Description="Model name as the API knows it, for everyday chat turns." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="Hermes strong model" Target="HERMES_STRONG_MODEL" Default="nousresearch/hermes-4-405b" Mode="" Description="Model for a message sent with Think harder." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="AI provider" Target="AI_PROVIDER" Default="" Mode="" Description="claude or hermes. Empty: Hermes when only Hermes settings are given, Claude otherwise." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
-  <Config Name="VM host" Target="VM_HOST" Default="monta@10.1.1.62" Mode="" Description="user@address of the Windows VM running Nextion Editor (SSH)." Type="Variable" Display="always" Required="true" Mask="false">monta@10.1.1.62</Config>
-  <Config Name="VM user" Target="VM_USER" Default="monta" Mode="" Description="Windows user that is signed in to the VM desktop." Type="Variable" Display="always" Required="true" Mask="false">monta</Config>
-  <Config Name="VM job folder" Target="VM_JOBROOT" Default="C:\Users\monta\nxauto" Mode="" Description="Scratch folder on the VM for screen builds." Type="Variable" Display="always" Required="true" Mask="false">C:\Users\monta\nxauto</Config>
+  <Config Name="VM host" Target="VM_HOST" Default="" Mode="" Description="user@address of the Windows VM running Nextion Editor (SSH), e.g. nextion@192.168.1.50." Type="Variable" Display="always" Required="true" Mask="false"></Config>
+  <Config Name="VM user" Target="VM_USER" Default="" Mode="" Description="Windows user that is signed in to the VM desktop." Type="Variable" Display="always" Required="true" Mask="false"></Config>
+  <Config Name="VM job folder" Target="VM_JOBROOT" Default="" Mode="" Description="Scratch folder on the VM for screen builds, e.g. C:\Users\nextion\nxauto." Type="Variable" Display="always" Required="true" Mask="false"></Config>
   <Config Name="Nextion Editor path" Target="VM_EDITOR" Default="C:\Program Files (x86)\Nextion Editor\Nextion Editor.exe" Mode="" Description="Path of Nextion Editor on the VM." Type="Variable" Display="advanced" Required="false" Mask="false">C:\Program Files (x86)\Nextion Editor\Nextion Editor.exe</Config>
   <Config Name="Default display series" Target="DISPLAY_SERIES" Default="Intelligent" Mode="" Description="Display series for new projects." Type="Variable" Display="advanced" Required="false" Mask="false">Intelligent</Config>
   <Config Name="Default display model" Target="DISPLAY_MODEL" Default="NX4827P043_011" Mode="" Description="Display model for new projects." Type="Variable" Display="advanced" Required="false" Mask="false">NX4827P043_011</Config>
