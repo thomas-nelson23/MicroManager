@@ -6,7 +6,7 @@ Design and decisions: [SPEC.md](../SPEC.md).
 
 | package | what it is |
 |---|---|
-| `packages/server` | Node backend: projects on disk, the chat (Claude Agent SDK) with build/flash/display tools, sketch builds (arduino-cli) and screen builds (Nextion Editor on a Windows VM over SSH). |
+| `packages/server` | Node backend: projects on disk, the chat (Claude Agent SDK, or a Hermes tool loop) with build/flash/display tools, sketch builds (arduino-cli) and screen builds (Nextion Editor on a Windows VM over SSH). |
 | `packages/web` | React UI (Steeze design system): project list, a Feature requests tab, and a project page with chat beside a workbench of tabs: Screen (preview), Wiring (board pinout with the project's connections and checks), Code and Builds. Flashing over Web Serial. |
 | `packages/flasher` | Web Serial / WebHID / Node serial library: Nano Every flashing (jtag2updi), Teensy 4.1 flashing (HalfKay), RP2040 UF2 checks and Nextion TFT upload. |
 | `packages/flash-test` | Standalone page for testing the flasher against hardware. |
@@ -18,8 +18,8 @@ the board's pinout and checks it against the board and the sketch. Boards and th
 
 ## Running it from source
 
-Needs Node 22+, `arduino-cli` with the boards you use, Python 3, OpenSSH, and a Claude Code login on this
-machine (or `CLAUDE_CODE_OAUTH_TOKEN`).
+Needs Node 22+, `arduino-cli` with the boards you use, Python 3, OpenSSH, and either a Claude Code login on this machine (or `CLAUDE_CODE_OAUTH_TOKEN`) or a
+Hermes setup (see the README).
 
 ```bash
 arduino-cli core install arduino:megaavr

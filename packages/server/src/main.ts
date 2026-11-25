@@ -41,7 +41,7 @@ app.get("/api/boards", (c) => c.json(BOARDS));
 
 app.get("/api/displays", (c) => c.json(DISPLAYS));
 
-app.get("/api/config", (c) => c.json({ publicUrl: config.publicUrl, feedbackRepo: config.feedbackRepo }));
+app.get("/api/config", (c) => c.json({ publicUrl: config.publicUrl, feedbackRepo: config.feedbackRepo, assistant: config.assistantName, provider: config.provider }));
 
 app.get("/api/feature-requests", async (c) => c.json(await listFeatureRequests()));
 
@@ -207,6 +207,7 @@ if (config.webDist) {
 
 const server = serve({ fetch: app.fetch, port: config.port, hostname: config.host }, (info) => {
   console.log(`MicroManager server on http://${config.host}:${info.port} · data ${config.dataDir}`);
+  console.log(config.provider === "hermes" ? `chat: ${config.assistantName} · ${config.hermes.model} · ${config.hermes.baseUrl}` : `chat: Claude · ${config.chatModel}`);
 });
 
 const wss = new WebSocketServer({ noServer: true, maxPayload: 32 * 1024 * 1024 });
