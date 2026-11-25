@@ -29,7 +29,10 @@ container never touches USB.
 
 | Variable | Required | Value |
 |---|---|---|
-| `CLAUDE_CODE_OAUTH_TOKEN` | yes | The owner makes it with `claude setup-token` on their PC (valid for 1 year). Secret: never log it, commit it or paste it into chat history you keep. |
+| `CLAUDE_CODE_OAUTH_TOKEN` | yes, for Claude | The owner makes it with `claude setup-token` on their PC (valid for 1 year). Secret: never log it, commit it or paste it into chat history you keep. Leave it out to use Hermes. |
+| `HERMES_API_KEY` | for Hermes | Instead of Claude: a key for an OpenAI-compatible API serving a Hermes model (OpenRouter by default). Not needed for a local Ollama. Secret, like the Claude token. |
+| `HERMES_BASE_URL` / `HERMES_MODEL` / `HERMES_STRONG_MODEL` | no | `https://openrouter.ai/api/v1` / `nousresearch/hermes-4-70b` / `nousresearch/hermes-4-405b` (defaults). See README, "Chat: Claude or Hermes". |
+| `AI_PROVIDER` | no | `claude` or `hermes`. Unset: Hermes when only Hermes settings are given, Claude otherwise. |
 | `VM_HOST` | yes | `monta@10.1.1.62` |
 | `VM_USER` | yes | `monta` |
 | `VM_JOBROOT` | yes | `C:\Users\monta\nxauto` |
@@ -198,7 +201,12 @@ so the next message starts a fresh Claude session in the same project.
   <WebUI>http://[IP]:[PORT:8765]/</WebUI>
   <Config Name="Web UI port" Target="8765" Default="8765" Mode="tcp" Description="HTTP port of the web UI and API." Type="Port" Display="always" Required="true" Mask="false">8765</Config>
   <Config Name="Data" Target="/data" Default="/mnt/user/appdata/nextion-arduino" Mode="rw" Description="Projects, builds, chat history, Claude sessions, Arduino libraries and the container's SSH key." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/nextion-arduino</Config>
-  <Config Name="Claude token" Target="CLAUDE_CODE_OAUTH_TOKEN" Default="" Mode="" Description="From `claude setup-token` (valid for a year). Powers the chat." Type="Variable" Display="always" Required="true" Mask="true"></Config>
+  <Config Name="Claude token" Target="CLAUDE_CODE_OAUTH_TOKEN" Default="" Mode="" Description="From `claude setup-token` (valid for a year). Powers the chat. Leave empty to use Hermes instead." Type="Variable" Display="always" Required="false" Mask="true"></Config>
+  <Config Name="Hermes API key" Target="HERMES_API_KEY" Default="" Mode="" Description="Instead of Claude: an API key for an OpenAI-compatible server running a Hermes model (OpenRouter by default). Not needed for a local server such as Ollama." Type="Variable" Display="always" Required="false" Mask="true"></Config>
+  <Config Name="Hermes API address" Target="HERMES_BASE_URL" Default="https://openrouter.ai/api/v1" Mode="" Description="OpenAI-compatible API, up to /v1. E.g. https://openrouter.ai/api/v1, https://inference-api.nousresearch.com/v1, or http://[OLLAMA-IP]:11434/v1." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="Hermes model" Target="HERMES_MODEL" Default="nousresearch/hermes-4-70b" Mode="" Description="Model name as the API knows it, for everyday chat turns." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="Hermes strong model" Target="HERMES_STRONG_MODEL" Default="nousresearch/hermes-4-405b" Mode="" Description="Model for a message sent with Think harder." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="AI provider" Target="AI_PROVIDER" Default="" Mode="" Description="claude or hermes. Empty: Hermes when only Hermes settings are given, Claude otherwise." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="VM host" Target="VM_HOST" Default="monta@10.1.1.62" Mode="" Description="user@address of the Windows VM running Nextion Editor (SSH)." Type="Variable" Display="always" Required="true" Mask="false">monta@10.1.1.62</Config>
   <Config Name="VM user" Target="VM_USER" Default="monta" Mode="" Description="Windows user that is signed in to the VM desktop." Type="Variable" Display="always" Required="true" Mask="false">monta</Config>
   <Config Name="VM job folder" Target="VM_JOBROOT" Default="C:\Users\monta\nxauto" Mode="" Description="Scratch folder on the VM for screen builds." Type="Variable" Display="always" Required="true" Mask="false">C:\Users\monta\nxauto</Config>

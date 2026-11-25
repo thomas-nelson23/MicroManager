@@ -63,12 +63,15 @@ async function json<T>(r: Response): Promise<T> {
 const send = (url: string, method: string, body?: unknown) =>
   fetch(url, { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
 
+/** Server settings the UI needs. assistant names who runs the chat ("Claude", "Hermes"). */
+export type AppConfig = { publicUrl: string; assistant: string; provider: "claude" | "hermes" };
+
 export const api = {
   projects: () => fetch("/api/projects").then((r) => json<ProjectSummary[]>(r)),
   project: (id: string) => fetch(`/api/projects/${id}`).then((r) => json<ProjectDetail>(r)),
   boards: () => fetch("/api/boards").then((r) => json<Board[]>(r)),
   displays: () => fetch("/api/displays").then((r) => json<DisplayModel[]>(r)),
-  config: () => fetch("/api/config").then((r) => json<{ publicUrl: string }>(r)),
+  config: () => fetch("/api/config").then((r) => json<AppConfig>(r)),
   create: (title: string, board?: string, display?: string) => send("/api/projects", "POST", { title, board, display }).then((r) => json<ProjectMeta>(r)),
   update: (id: string, patch: { title?: string; description?: string; board?: string; display?: string }) =>
     send(`/api/projects/${id}`, "PATCH", patch).then((r) => json<ProjectMeta>(r)),

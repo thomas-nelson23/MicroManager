@@ -15,7 +15,8 @@ if [ ! -f "$HOME/.ssh/id_ed25519" ]; then
   cat "$HOME/.ssh/id_ed25519.pub"
 fi
 chmod 600 "$HOME/.ssh/id_ed25519"
-if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ] && [ -z "$ANTHROPIC_API_KEY" ] && [ ! -d "$HOME/.claude" ]; then
-  echo "WARNING: no CLAUDE_CODE_OAUTH_TOKEN set; the chat won't work until it is."
+if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ] && [ -z "$ANTHROPIC_API_KEY" ] && [ ! -d "$HOME/.claude" ] \
+  && [ -z "$HERMES_API_KEY" ] && [ -z "$HERMES_BASE_URL" ] && [ -z "$OPENROUTER_API_KEY" ] && [ "$AI_PROVIDER" != "hermes" ]; then
+  echo "WARNING: no AI set up for the chat. Set CLAUDE_CODE_OAUTH_TOKEN (Claude), or HERMES_API_KEY / HERMES_BASE_URL (Hermes, see README)."
 fi
 exec "$@"

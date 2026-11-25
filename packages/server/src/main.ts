@@ -40,7 +40,7 @@ app.get("/api/boards", (c) => c.json(BOARDS));
 
 app.get("/api/displays", (c) => c.json(DISPLAYS));
 
-app.get("/api/config", (c) => c.json({ publicUrl: config.publicUrl }));
+app.get("/api/config", (c) => c.json({ publicUrl: config.publicUrl, assistant: config.assistantName, provider: config.provider }));
 
 app.get("/api/projects", async (c) => c.json(await listProjectSummaries()));
 
@@ -188,6 +188,7 @@ if (config.webDist) {
 
 const server = serve({ fetch: app.fetch, port: config.port, hostname: config.host }, (info) => {
   console.log(`nextion-arduino server on http://${config.host}:${info.port} · data ${config.dataDir}`);
+  console.log(config.provider === "hermes" ? `chat: ${config.assistantName} · ${config.hermes.model} · ${config.hermes.baseUrl}` : `chat: Claude · ${config.chatModel}`);
 });
 
 const wss = new WebSocketServer({ noServer: true, maxPayload: 32 * 1024 * 1024 });

@@ -1,6 +1,6 @@
 /** The server's catalogues (boards, displays) and settings, fetched once per page load. */
 import { useEffect, useState } from "react";
-import { api, type Board, type DisplayModel } from "./api.ts";
+import { api, type AppConfig, type Board, type DisplayModel } from "./api.ts";
 
 function once<T>(load: () => Promise<T>) {
   let cached: Promise<T> | null = null;
@@ -20,7 +20,7 @@ function useLoaded<T>(load: () => Promise<T>, initial: T): T {
 
 const NO_BOARDS: Board[] = [];
 const NO_DISPLAYS: DisplayModel[] = [];
-const NO_CONFIG = { publicUrl: "" };
+const NO_CONFIG: AppConfig = { publicUrl: "", assistant: "Claude", provider: "claude" };
 export const useBoards = () => useLoaded(boards, NO_BOARDS);
 export const useDisplays = () => useLoaded(displays, NO_DISPLAYS);
 export const useConfig = () => useLoaded(config, NO_CONFIG);

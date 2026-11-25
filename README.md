@@ -19,7 +19,7 @@ Design and decisions: [SPEC.md](SPEC.md).
 Needs Node 22+, `arduino-cli` with the boards you use (`arduino-cli core install arduino:megaavr`, and for
 the Teensy 4.1 `arduino-cli core install teensy:avr --additional-urls https://www.pjrc.com/teensy/package_teensy_index.json`,
 for the Raspberry Pi Pico `arduino-cli core install rp2040:rp2040 --additional-urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json`),
-Python 3, OpenSSH, and a Claude Code login on this machine (or `CLAUDE_CODE_OAUTH_TOKEN`).
+Python 3, OpenSSH, and either a Claude Code login on this machine (or `CLAUDE_CODE_OAUTH_TOKEN`) or a Hermes setup (below).
 
 ```bash
 npm install
@@ -57,3 +57,35 @@ the board's pinout and checks it against the board and the sketch. Boards and th
 `packages/server/src/boards.ts`, displays in `packages/server/src/displays.ts`.
 
 Screen builds need the Windows VM's user signed in to the desktop (Nextion Editor runs in that session).
+
+## Chat: Claude or Hermes
+
+The chat runs on Claude by default (Claude Agent SDK, `CLAUDE_CODE_OAUTH_TOKEN`). People without Claude can run it
+on a [Hermes](https://nousresearch.com/) model from Nous Research instead, or on any other model, through an
+OpenAI-compatible chat API. The app then runs its own small tool loop with the same tools Claude gets (Read, Edit,
+Write, Glob, Grep, and the bench tools: ship, wire, check_screen, flash, display, component_info, install_library),
+and keeps each project's conversation in `<project>/.chat-hermes.json`.
+
+| Variable | Default | |
+|---|---|---|
+| `AI_PROVIDER` | unset | `claude` or `hermes`. Unset: Hermes when only Hermes settings are given, Claude otherwise. |
+| `HERMES_BASE_URL` | `https://openrouter.ai/api/v1` | The API, up to and including `/v1`. |
+| `HERMES_API_KEY` | | Sent as a bearer token. `OPENROUTER_API_KEY` works too. Not needed for a local server. |
+| `HERMES_MODEL` | `nousresearch/hermes-4-70b` | Everyday chat turns, by the name the API uses. |
+| `HERMES_STRONG_MODEL` | `nousresearch/hermes-4-405b` | A message sent with **Think harder**. |
+| `HERMES_TIMEOUT` | `300` | Seconds to wait for one reply (local models on a CPU can be slow). |
+| `HERMES_NAME` | `Hermes` | The assistant's name in the chat. |
+
+Some setups:
+
+- **OpenRouter** (pay per use): `HERMES_API_KEY=<key from openrouter.ai>`, nothing else.
+- **Nous Portal**: `HERMES_BASE_URL=https://inference-api.nousresearch.com/v1`, `HERMES_API_KEY=<key>`,
+  and `HERMES_MODEL` / `HERMES_STRONG_MODEL` set to model names as the portal lists them (e.g. `Hermes-4-70B`).
+- **Ollama** on your own machine (free, needs a decent GPU): `ollama pull hermes3`, then
+  `HERMES_BASE_URL=http://<ollama-host>:11434/v1`, `HERMES_MODEL=hermes3`. LM Studio, vLLM and llama.cpp's
+  server work the same way with their own address and model name.
+
+The model must support tool calling. When a server returns Hermes-style `<tool_call>` text instead of real tool
+calls, the app reads those too. Smaller models make more mistakes with the screen format than Claude does, so
+expect to point out more errors. Attached pictures are saved to the project, but the Hermes backend doesn't show
+them to the model.

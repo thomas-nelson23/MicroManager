@@ -1,20 +1,16 @@
-/** Chat with Claude (Claude Agent SDK) inside a project folder, with build/flash/display tools. */
+/** Chat inside a project folder, with build/flash/display tools: Claude (Claude Agent SDK) by default, or a Hermes model (OpenAI-compatible API, see hermes.ts). */
 import { createSdkMcpServer, query, SYSTEM_PROMPT_DYNAMIC_BOUNDARY, tool, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
-import { z } from "zod";
-import { lintLayout, projectFonts } from "./layout-lint.ts";
-import { build } from "./builds.ts";
-import { componentInfo } from "./components.ts";
+import { benchTools } from "./bench.ts";
 import { config } from "./config.ts";
+import { runHermesTurn, HERMES_SESSION_FILE } from "./hermes.ts";
 import { hubFor, type ProjectHub } from "./hub.ts";
-import type { ChatEvent, ClientMessage } from "./protocol.ts";
-import { boardByFqbn } from "./boards.ts";
-import { listBuilds, markFlashed, projectDir, readMeta, readWiring, writeMeta, writeWiring } from "./projects.ts";
-import { applyWiring, checkWiring, wiringLines } from "./wiring.ts";
+import type { ChatEvent } from "./protocol.ts";
+import { listBuilds, projectDir, readMeta, writeMeta } from "./projects.ts";
+
+export { compactReplies } from "./bench.ts";
 
 const GUIDE_DIR = path.join(config.serverRoot, "guide");
 const GUIDE_FULL = fs.readFileSync(path.join(GUIDE_DIR, "GUIDE.md"), "utf8");
@@ -31,235 +27,16 @@ export function splitGuide(md: string): { guide: string; boards: Map<string, str
 }
 const { guide: GUIDE, boards: BOARD_NOTES } = splitGuide(GUIDE_FULL);
 
-const PREAMBLE = `You are Claude, working inside NextionDesigner, a web app where a person builds Arduino + Nextion display projects by chatting with you. Your tools: Read, Edit, Write, Glob and Grep on the project folder (your working directory), and the bench tools (ship, wire, check_screen, flash, display, component_info, install_library). Read a file before you Edit it, and give Edit the exact text. Use relative paths. Be brief.`;
+/** Same text for both backends; only the name differs. */
+export const preamble = (name: string) => `You are ${name}, working inside NextionDesigner, a web app where a person builds Arduino + Nextion display projects by chatting with you. Your tools: Read, Edit, Write, Glob and Grep on the project folder (your working directory), and the bench tools (ship, wire, check_screen, flash, display, component_info, install_library). Read a file before you Edit it, and give Edit the exact text. Use relative paths. Be brief.`;
 
-const text = (s: string, isError = false) => ({ content: [{ type: "text" as const, text: s }], ...(isError ? { isError: true } : {}) });
-
-function buildSummary(b: Awaited<ReturnType<typeof build>>): string {
-  const lines = [`Build #${b.n}`];
-  if (b.sketch) {
-    lines.push(
-      b.sketch.ok
-        ? `sketch: OK${b.sketch.fromBuild ? ` (unchanged, from #${b.sketch.fromBuild})` : ""}${b.sketch.bytes ? ` · ${b.sketch.bytes} of ${b.sketch.max} bytes` : ""}`
-        : `sketch: FAILED\n${b.sketch.error}`,
-    );
-  }
-  if (b.screen) {
-    lines.push(
-      b.screen.ok
-        ? `screen: OK${b.screen.fromBuild ? ` (unchanged, from #${b.screen.fromBuild})` : ""} · ${b.screen.bytes} bytes`
-        : `screen: FAILED\n${b.screen.error}`,
-    );
-  }
-  return lines.join("\n");
+/** The project's context line and board notes: the part of the prompt that differs per project. */
+export function projectContext(meta: Awaited<ReturnType<typeof readMeta>>, cwd: string): string {
+  return `This project: "${meta.title}" · folder ${cwd} · board ${meta.board.name} (${meta.board.fqbn}) · display ${meta.display.series} ${meta.display.model}, ${meta.display.width}×${meta.display.height}.${config.allowBash ? "" : " There is no shell."}\n\n${BOARD_NOTES.get(meta.board.fqbn) ?? ""}`;
 }
 
-/** One display reply as a few words: "Hello", 42, touch 0.3 press, 0x1a invalid variable name. */
-function fmtReply(r: unknown): string {
-  if (!r || typeof r !== "object") return JSON.stringify(r);
-  const o = r as Record<string, unknown>;
-  if ("sketch" in o) return `sketch: ${o.sketch}`;
-  if ("error" in o) return `error: ${o.error}`;
-  if ("string" in o) return JSON.stringify(o.string);
-  if ("number" in o) return String(o.number);
-  if ("touch" in o) {
-    const t = o.touch as { page: number; component: number; event: string };
-    return `touch ${t.page}.${t.component} ${t.event}`;
-  }
-  if ("page" in o) return `page ${o.page}`;
-  if ("code" in o) return `${o.code} ${o.meaning}`;
-  return JSON.stringify(o);
-}
 
-/** Display results as one line per command instead of indented JSON. */
-export function compactReplies(commands: string[], replies: unknown[]): string {
-  const lines: string[] = [];
-  for (const r of replies) {
-    const o = (r ?? {}) as { cmd?: string; reply?: unknown[]; events?: unknown[] };
-    if (o.cmd !== undefined) lines.push(`${o.cmd} → ${o.reply?.length ? o.reply.map(fmtReply).join(", ") : "ok"}`);
-    else if (o.events) lines.push(`events: ${o.events.length ? o.events.map(fmtReply).join(", ") : "none"}`);
-    else lines.push(fmtReply(r));
-  }
-  return lines.join("\n") || `${commands.length} sent, no replies`;
-}
-
-function benchServer(projectId: string, hub: ProjectHub) {
-  const dir = projectDir(projectId);
-
-  const checkScreen = async (): Promise<{ ok: boolean; out: string }> => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "nxcheck-"));
-    const meta = await readMeta(projectId);
-    const out = await new Promise<{ code: number; out: string }>((resolve) => {
-      const p = spawn("python3", ["-I", path.join(config.serverRoot, "nextion", "nxprep.py"), path.join(dir, "nextion"), path.join(tmp, "hmi.txt"), "--jobname", projectId, "--jobroot", "C:\\check"], {
-        env: { ...process.env, DISPLAY_SERIES: meta.display.series, DISPLAY_MODEL: meta.display.model },
-      });
-      let o = "";
-      p.stdout.on("data", (d) => (o += d));
-      p.stderr.on("data", (d) => (o += d));
-      p.on("close", (code) => resolve({ code: code ?? 1, out: o }));
-    });
-    fs.rmSync(tmp, { recursive: true, force: true });
-    if (out.code !== 0) return { ok: false, out: out.out.trim() };
-    const hmi = await fs.promises.readFile(path.join(dir, "nextion", "hmi.txt"), "utf8").catch(() => "");
-    const warn = lintLayout(hmi, meta.display.width, meta.display.height, await projectFonts(projectId));
-    const msg = [out.out.trim(), ...(warn.length ? ["layout warnings (estimates):", ...warn] : [])].filter((l) => l && l !== "OK").join("\n");
-    return { ok: true, out: msg || "OK" };
-  };
-
-  const flashBuild = async (n: number | undefined, parts: "both" | "sketch" | "screen"): Promise<{ ok: boolean; out: string }> => {
-    if (!hub.connected) return { ok: false, out: "Not flashed: nobody has the project page open." };
-    const builds = await listBuilds(projectId);
-    const b = n ? builds.find((x) => x.n === n) : builds[0];
-    if (!b) return { ok: false, out: "There is no build yet." };
-    const base = `/api/projects/${projectId}/builds/${b.n}`;
-    const sketch = parts !== "screen" && b.sketch?.ok && b.sketch.file ? `${base}/${b.sketch.file}` : undefined;
-    const screen = parts !== "sketch" && b.screen?.ok && b.screen.file ? `${base}/${b.screen.file}` : undefined;
-    if (!sketch && !screen) return { ok: false, out: `Build #${b.n} has nothing flashable for "${parts}".` };
-    const id = randomUUID();
-    const ev: ChatEvent = { kind: "flash", id, build: b.n, label: b.label, sketch, screen, screenBytes: screen ? b.screen?.bytes : undefined, status: "waiting" };
-    await hub.emit(ev);
-    const res = (await hub.waitFor(id, 15 * 60_000)) as Extract<ClientMessage, { type: "flash_result" }> | null;
-    const status = res?.status ?? "skipped";
-    const message = res ? res.message : "No answer within 15 minutes.";
-    await hub.update(id, { status, message } as Partial<ChatEvent>);
-    if (status === "done") {
-      await markFlashed(projectId, b.n, !!sketch, !!screen);
-      hub.broadcast({ type: "project_changed" });
-    }
-    return { ok: status === "done", out: `Flash #${b.n} ${status}${message ? `: ${message}` : ""}` };
-  };
-
-  const displayCommands = async (commands: string[], listenSeconds?: number): Promise<{ ok: boolean; out: string }> => {
-    if (!hub.connected) return { ok: false, out: "Nobody has the project page open, so the display can't be reached." };
-    const id = randomUUID();
-    hub.broadcast({ type: "device_request", id, commands, listenSeconds });
-    const res = (await hub.waitFor(id, 60_000 + (listenSeconds ?? 0) * 1000)) as Extract<ClientMessage, { type: "device_result" }> | null;
-    if (!res) return { ok: false, out: "The browser didn't answer within a minute." };
-    if (!res.ok) return { ok: false, out: res.error ?? "failed" };
-    return { ok: true, out: compactReplies(commands, res.replies ?? []) };
-  };
-
-  return createSdkMcpServer({
-    name: "bench",
-    version: "0.2.0",
-    tools: [
-      tool(
-        "ship",
-        "Check, build, flash and verify in one call. Validates nextion/hmi.txt (screen targets), compiles the target into a new numbered build (the other half is carried over), flashes it when the person has the page open (they click a button; waits up to 15 minutes), then runs the optional verify display commands. Stops at the first failure and says why.",
-        {
-          target: z.enum(["sketch", "screen", "both"]).describe("What changed"),
-          label: z.string().describe("A few words naming the change, e.g. 'fan override'"),
-          flash: z.boolean().default(true).describe("false: only build"),
-          verify: z.array(z.string()).max(20).optional().describe("Display instructions to run after flashing, e.g. ['get t0.txt', 'get dp']"),
-        },
-        async ({ target, label, flash, verify }) => {
-          const lines: string[] = [];
-          if (target !== "sketch") {
-            const c = await checkScreen();
-            if (!c.ok) return text(`check_screen FAILED, nothing built:\n${c.out}`, true);
-            if (c.out !== "OK") lines.push(`check: ${c.out}`);
-          }
-          const b = await build(projectId, target, label);
-          hub.broadcast({ type: "project_changed" });
-          lines.push(buildSummary(b));
-          if ((b.sketch && !b.sketch.ok) || (b.screen && !b.screen.ok)) return text(lines.join("\n"), true);
-          if (!flash) return text(lines.join("\n"));
-          const f = await flashBuild(b.n, target);
-          lines.push(f.out);
-          if (!f.ok) return text(lines.join("\n"), hub.connected);
-          if (verify?.length) {
-            const d = await displayCommands(verify);
-            lines.push(`verify: ${d.out}`);
-            if (!d.ok) return text(lines.join("\n"), true);
-          }
-          return text(lines.join("\n"));
-        },
-      ),
-      tool(
-        "wire",
-        "Change the project's wiring (wiring.json) without reading or editing the file, and get the resulting wiring and any problems the app found (pin missing on this board, two parts on a pin, no PWM, 5 V into a 3.3 V pin). `remove` runs first. Call with no arguments to see the wiring.",
-        {
-          set: z
-            .array(z.object({ pin: z.string(), part: z.string(), partPin: z.string().optional(), color: z.string().optional(), signal: z.string().optional().describe("'5V' when the part drives 5 V into the pin") }))
-            .max(40)
-            .optional()
-            .describe("Wires to add; replaces that part's wire with the same partPin"),
-          remove: z.array(z.string()).max(40).optional().describe("Part names (all their wires) or board pins to clear"),
-        },
-        async ({ set, remove }) => {
-          const cur = await readWiring(projectId);
-          if (cur.error) return text(`${cur.error}. Fix or rewrite wiring.json.`, true);
-          const next = set?.length || remove?.length ? applyWiring(cur.wiring, { set, remove }) : cur.wiring;
-          if (next !== cur.wiring) {
-            await writeWiring(projectId, next);
-            hub.broadcast({ type: "project_changed" });
-          }
-          const board = boardByFqbn((await readMeta(projectId)).board.fqbn);
-          const issues = board ? checkWiring(board, next).filter((i) => i.level !== "info") : [];
-          return text(`${wiringLines(next)}${issues.length ? `\nproblems:\n${issues.map((i) => `- ${i.text}`).join("\n")}` : ""}`);
-        },
-      ),
-      tool(
-        "check_screen",
-        "Validate nextion/hmi.txt without building (ship does this too): shape, component types, attributes, text lengths, events, and that every obj.attr in event code exists.",
-        {},
-        async () => {
-          const c = await checkScreen();
-          return text(c.out, !c.ok);
-        },
-      ),
-      tool(
-        "component_info",
-        "A Nextion component's full attribute list (type, default, range, whether settable at runtime). Give an hmi.txt type name, objtype number or name prefix, e.g. 'slider', '122', 'bt'.",
-        { type: z.string().min(1).max(40) },
-        async ({ type }) => text(componentInfo(type)),
-      ),
-      tool(
-        "flash",
-        "Re-flash an existing build (ship already flashes new builds). The sketch goes to the board; the screen is uploaded through NexPass.",
-        {
-          build: z.number().int().optional().describe("Build number; defaults to the latest"),
-          parts: z.enum(["both", "sketch", "screen"]).default("both"),
-        },
-        async ({ build: n, parts }) => {
-          const f = await flashBuild(n, parts);
-          return text(f.out, !f.ok);
-        },
-      ),
-      tool(
-        "install_library",
-        "Install an Arduino library with arduino-cli (from the Arduino library index), e.g. 'DHT sensor library' or 'Adafruit NeoPixel'. Use the exact library name from the index; dependencies are installed too.",
-        { name: z.string().min(1).max(100), version: z.string().max(20).optional() },
-        async ({ name, version }) => {
-          const spec = version ? `${name}@${version}` : name;
-          const out = await new Promise<{ code: number; out: string }>((resolve) => {
-            const p = spawn(config.arduinoCli, ["lib", "install", spec]);
-            let o = "";
-            p.stdout.on("data", (d) => (o += d));
-            p.stderr.on("data", (d) => (o += d));
-            p.on("error", (e) => resolve({ code: 1, out: String(e) }));
-            p.on("close", (code) => resolve({ code: code ?? 1, out: o }));
-          });
-          return text(out.out.trim().slice(-2000) || "installed", out.code !== 0);
-        },
-      ),
-      tool(
-        "display",
-        "Send Nextion instructions to the live display through the person's browser and the running sketch, and get the decoded replies. Examples: 'get t0.txt', 'get dp', 'click b0,1', 'page 1'. Changes are temporary. A line starting with '@' goes to the sketch's NexPass.onRequest handler instead (see device.md) and returns its reply lines.",
-        {
-          commands: z.array(z.string()).min(1).max(20),
-          listen_seconds: z.number().min(0).max(30).optional().describe("Afterwards, collect events (e.g. touches) for this long"),
-        },
-        async ({ commands, listen_seconds }) => {
-          const d = await displayCommands(commands, listen_seconds);
-          return text(d.out, !d.ok);
-        },
-      ),
-    ],
-  });
-}
-
-function toolLabel(name: string, input: Record<string, unknown>, cwd: string): { label: string; detail?: string } {
+export function toolLabel(name: string, input: Record<string, unknown>, cwd: string): { label: string; detail?: string } {
   const rel = (p: unknown) => (typeof p === "string" ? path.relative(cwd, p) || p : "");
   switch (name) {
     case "Read":
@@ -304,9 +81,10 @@ function resultSummary(content: unknown): string {
 
 const running = new Map<string, AbortController>();
 
-/** Forget the conversation so far: the next message starts a new Claude session. Files are untouched. */
+/** Forget the conversation so far: the next message starts a new session. Files are untouched. */
 export async function newConversation(projectId: string): Promise<void> {
   const meta = await readMeta(projectId);
+  await fs.promises.rm(path.join(projectDir(projectId), HERMES_SESSION_FILE), { force: true });
   delete meta.sessionId;
   delete meta.sessionContext;
   await writeMeta(meta);
@@ -334,8 +112,10 @@ async function saveImages(projectId: string, images: { name: string; dataUrl: st
 }
 
 /** Why the next message should start a new Claude session instead of resuming the last one, if it should. */
-export function freshReason(meta: { sessionId?: string; sessionAt?: string; sessionContext?: number }, now = Date.now()): string | undefined {
+export function freshReason(meta: { sessionId?: string; sessionAt?: string; sessionContext?: number }, now = Date.now(), provider = config.provider): string | undefined {
   if (!meta.sessionId) return undefined;
+  // a session from the other backend can't be resumed: Hermes session ids start with "hermes-"
+  if (meta.sessionId.startsWith("hermes-") !== (provider === "hermes")) return "because the AI model changed";
   // sessions from before the lean setup recorded the old, much bigger prompt and tool set
   if (!meta.sessionAt) return "with the leaner setup";
   if (meta.sessionAt && now - Date.parse(meta.sessionAt) > config.freshAfterMinutes * 60_000) return "after a break";
@@ -370,8 +150,9 @@ interface Turn {
 
 export async function sendMessage(projectId: string, typedText: string, attached?: { name: string; dataUrl: string }[], opts: { strong?: boolean } = {}): Promise<void> {
   const hub = hubFor(projectId);
+  const name = config.assistantName;
   if (hub.busy) {
-    await hub.emit({ kind: "notice", id: randomUUID(), text: "Claude is still working on the last message." });
+    await hub.emit({ kind: "notice", id: randomUUID(), text: `${name} is still working on the last message.` });
     return;
   }
   hub.setBusy(true);
@@ -383,26 +164,48 @@ export async function sendMessage(projectId: string, typedText: string, attached
   let userText = images.length ? `${typedText}\n\n[Attached picture${images.length > 1 ? "s" : ""}: ${images.join(", ")}. Read ${images.length > 1 ? "them" : "it"} to see ${images.length > 1 ? "them" : "it"}.]`.trim() : typedText;
   const earlier = [...(await hub.load())];
   await hub.emit({ kind: "user", id: randomUUID(), text: typedText, at: new Date().toISOString(), ...(images.length ? { images } : {}) });
-  const model = opts.strong ? config.strongModel : config.chatModel;
+  const hermes = config.provider === "hermes";
+  const model = hermes ? (opts.strong ? config.hermes.strongModel : config.hermes.model) : opts.strong ? config.strongModel : config.chatModel;
   const turn: Turn = { steps: new Set(), context: 0, model };
   try {
     const meta = await readMeta(projectId);
-    // Every step re-sends the whole conversation, so long or stale sessions are the main cost: start over and hand Claude a short recap.
+    // Every step re-sends the whole conversation, so long or stale sessions are the main cost: start over and hand the model a short recap.
     const why = freshReason(meta);
     if (why) {
       delete meta.sessionId;
       await writeMeta(meta);
       userText = `${await recap(projectId, earlier)}\n\n${userText}`;
-      await hub.emit({ kind: "notice", id: randomUUID(), text: `Claude started a fresh conversation ${why}, with a short recap. Your files are unchanged.` });
+      await hub.emit({ kind: "notice", id: randomUUID(), text: `${name} started a fresh conversation ${why}, with a short recap. Your files are unchanged.` });
     }
-    const tools = ["Read", "Edit", "Write", "Glob", "Grep"];
-    if (config.allowBash) tools.push("Bash");
-    const allowed = [...tools, "mcp__bench__ship", "mcp__bench__wire", "mcp__bench__check_screen", "mcp__bench__component_info", "mcp__bench__flash", "mcp__bench__display", "mcp__bench__install_library"];
-    const boardNotes = BOARD_NOTES.get(meta.board.fqbn) ?? "";
     if (hub.screenEdits.size) {
       userText = `(Saved by the person in the screen editor since your last turn, already in nextion/hmi.txt: ${[...hub.screenEdits].join("; ")}. Keep those values unless asked.)\n\n${userText}`;
       hub.screenEdits.clear();
     }
+    if (hermes) {
+      const r = await runHermesTurn({
+        projectId,
+        hub,
+        cwd,
+        model,
+        userText,
+        sessionId: meta.sessionId,
+        systemPrompt: `${preamble(name)}\n\n${GUIDE}\n\n${projectContext(meta, cwd)}`,
+        signal: abort.signal,
+        label: (tool, input) => toolLabel(tool, input, cwd),
+      });
+      if (r.sessionId !== meta.sessionId) {
+        const m = await readMeta(projectId);
+        m.sessionId = r.sessionId;
+        await writeMeta(m);
+      }
+      turn.context = r.context;
+      await finishTurn(hub, projectId, t0, turn, { ok: r.ok, error: r.error, costUsd: r.costUsd, steps: r.steps, input: r.input, cached: r.cached, output: r.output });
+      return;
+    }
+    const tools = ["Read", "Edit", "Write", "Glob", "Grep"];
+    if (config.allowBash) tools.push("Bash");
+    const bench = benchTools(projectId, hub);
+    const allowed = [...tools, ...bench.map((t) => `mcp__bench__${t.name}`)];
     const q = query({
       prompt: userText,
       options: {
@@ -413,7 +216,7 @@ export async function sendMessage(projectId: string, typedText: string, attached
         // Only the tools this app uses: the full Claude Code set adds ~25k tokens of definitions to every step.
         tools,
         allowedTools: allowed,
-        mcpServers: { bench: benchServer(projectId, hub) },
+        mcpServers: { bench: createSdkMcpServer({ name: "bench", version: "0.2.0", tools: bench.map((t) => tool(t.name, t.description, t.shape, t.run)) }) },
         settingSources: [],
         resume: meta.sessionId,
         maxTurns: 40,
@@ -421,11 +224,7 @@ export async function sendMessage(projectId: string, typedText: string, attached
         env: { ...process.env, ENABLE_TOOL_SEARCH: "false" },
         // A lean prompt of our own instead of the Claude Code preset (~8k tokens). The part before the boundary is
         // the same for every project, so it stays in the prompt cache.
-        systemPrompt: [
-          `${PREAMBLE}\n\n${GUIDE}`,
-          SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
-          `This project: "${meta.title}" · folder ${cwd} · board ${meta.board.name} (${meta.board.fqbn}) · display ${meta.display.series} ${meta.display.model}, ${meta.display.width}×${meta.display.height}.${config.allowBash ? "" : " There is no shell."}\n\n${boardNotes}`,
-        ],
+        systemPrompt: [`${preamble("Claude")}\n\n${GUIDE}`, SYSTEM_PROMPT_DYNAMIC_BOUNDARY, projectContext(meta, cwd)],
       },
     });
     for await (const msg of q as AsyncIterable<SDKMessage>) await handle(hub, projectId, msg, cwd, t0, turn);
@@ -446,6 +245,24 @@ async function rememberSession(projectId: string, turn: Turn) {
   meta.sessionAt = new Date().toISOString();
   if (turn.context) meta.sessionContext = turn.context;
   await writeMeta(meta);
+}
+
+/** End a turn: the token meter in the chat, the fresh-session bookkeeping, and one line in .chat-usage.jsonl. */
+async function finishTurn(
+  hub: ProjectHub,
+  projectId: string,
+  t0: number,
+  turn: Turn,
+  r: { ok: boolean; error?: string; costUsd?: number; steps: number; input: number; cached: number; output: number },
+) {
+  const tokens = { input: r.input, cached: r.cached, output: r.output, context: turn.context, steps: r.steps, model: turn.model };
+  const seconds = Math.round((Date.now() - t0) / 1000);
+  await hub.emit({ kind: "turn_end", id: randomUUID(), ok: r.ok, error: r.error, costUsd: r.costUsd, seconds, tokens });
+  await rememberSession(projectId, turn);
+  // one line per turn, to see where usage goes over time (kept out of project copies like the chat log)
+  await fs.promises
+    .appendFile(path.join(projectDir(projectId), ".chat-usage.jsonl"), JSON.stringify({ at: new Date().toISOString(), seconds, costUsd: r.costUsd, ...tokens }) + "\n")
+    .catch(() => {});
 }
 
 type Usage = { input_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number; output_tokens?: number };
@@ -478,29 +295,15 @@ async function handle(hub: ProjectHub, projectId: string, msg: SDKMessage, cwd: 
     }
   } else if (msg.type === "result") {
     const u = (msg.usage ?? {}) as Usage;
-    const tokens = {
-      input: (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0),
-      cached: u.cache_read_input_tokens ?? 0,
-      output: u.output_tokens ?? 0,
-      context: turn.context,
-      steps: msg.num_turns ?? turn.steps.size,
-      model: turn.model,
-    };
-    const seconds = Math.round((Date.now() - t0) / 1000);
-    await hub.emit({
-      kind: "turn_end",
-      id: randomUUID(),
+    await finishTurn(hub, projectId, t0, turn, {
       ok: msg.subtype === "success" && !msg.is_error,
       error: msg.subtype === "success" ? undefined : msg.subtype,
       costUsd: msg.total_cost_usd,
-      seconds,
-      tokens,
+      steps: msg.num_turns ?? turn.steps.size,
+      input: (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0),
+      cached: u.cache_read_input_tokens ?? 0,
+      output: u.output_tokens ?? 0,
     });
-    await rememberSession(projectId, turn);
-    // one line per turn, to see where usage goes over time (kept out of project copies like the chat log)
-    await fs.promises
-      .appendFile(path.join(projectDir(projectId), ".chat-usage.jsonl"), JSON.stringify({ at: new Date().toISOString(), seconds, costUsd: msg.total_cost_usd, ...tokens }) + "\n")
-      .catch(() => {});
   }
 }
 
