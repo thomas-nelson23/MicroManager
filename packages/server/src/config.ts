@@ -16,6 +16,8 @@ export const config = {
 
   /** The app's HTTPS address, if it has one: shown to people who open it over plain HTTP, where browsers block USB. */
   publicUrl: env.PUBLIC_URL ?? "",
+  /** GitHub repository (owner/name) that the Feature requests tab opens issues on. Empty hides the GitHub button. */
+  feedbackRepo: env.FEEDBACK_REPO ?? "thomas-nelson23/nextion-arduino",
 
   /** Model for everyday chat turns. */
   chatModel: env.CLAUDE_CHAT_MODEL ?? "claude-sonnet-5-5",

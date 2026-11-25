@@ -31,7 +31,7 @@ export function splitGuide(md: string): { guide: string; boards: Map<string, str
 }
 const { guide: GUIDE, boards: BOARD_NOTES } = splitGuide(GUIDE_FULL);
 
-const PREAMBLE = `You are Claude, working inside NextionDesigner, a web app where a person builds Arduino + Nextion display projects by chatting with you. Your tools: Read, Edit, Write, Glob and Grep on the project folder (your working directory), and the bench tools (ship, wire, check_screen, flash, display, component_info, install_library). Read a file before you Edit it, and give Edit the exact text. Use relative paths. Be brief.`;
+const PREAMBLE = `You are Claude, working inside MicroManager, a web app where a person builds Arduino + Nextion display projects by chatting with you. Your tools: Read, Edit, Write, Glob and Grep on the project folder (your working directory), and the bench tools (ship, wire, check_screen, flash, display, component_info, install_library). Read a file before you Edit it, and give Edit the exact text. Use relative paths. Be brief.`;
 
 const text = (s: string, isError = false) => ({ content: [{ type: "text" as const, text: s }], ...(isError ? { isError: true } : {}) });
 

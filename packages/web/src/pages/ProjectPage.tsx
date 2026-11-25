@@ -1,7 +1,7 @@
 /** The project page: chat on the left, and on the right a status strip over one large tabbed area. */
 import { type PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { boardByUsb } from "@nextion-arduino/server/boards";
-import { displayByReported } from "@nextion-arduino/server/displays";
+import { boardByUsb } from "@micromanager/server/boards";
+import { displayByReported } from "@micromanager/server/displays";
 import { api, type ProjectDetail } from "../api.ts";
 import { displayLabel, useBoards, useConfig, useDisplays } from "../catalog.ts";
 import { BuildsView } from "../components/BuildsView.tsx";
@@ -66,9 +66,9 @@ export function ProjectPage({ id, navigate }: { id: string; navigate: (to: strin
   }, [fqbn, device.setBoard]);
 
   useEffect(() => {
-    document.title = detail ? `${detail.meta.title} · Nextion Arduino` : "Nextion Arduino";
+    document.title = detail ? `${detail.meta.title} · MicroManager` : "MicroManager";
     return () => {
-      document.title = "Nextion Arduino";
+      document.title = "MicroManager";
     };
   }, [detail?.meta.title]);
 
@@ -153,10 +153,14 @@ export function ProjectPage({ id, navigate }: { id: string; navigate: (to: strin
   return (
     <div className="page app">
       <header className="appbar">
-        <span className="wordmark">Nextion <b>Arduino</b></span>
+        <span className="wordmark">Micro<b>Manager</b></span>
         <nav aria-label="Breadcrumb">
           <a href="/" onClick={(e) => { e.preventDefault(); navigate("/"); }}>Projects</a>
           <a href={`/p/${id}`} className="current" aria-current="page">{detail?.meta.title ?? id}</a>
+        </nav>
+        <span className="spacer" />
+        <nav aria-label="More">
+          <a href="/requests" onClick={(e) => { e.preventDefault(); navigate("/requests"); }}>Feature requests</a>
         </nav>
       </header>
       <div className="edge" />

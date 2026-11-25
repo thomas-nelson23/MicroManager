@@ -4,7 +4,7 @@
     {
       "name": "flash-test",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "-w", "@nextion-arduino/flash-test"],
+      "runtimeArgs": ["run", "dev", "-w", "@micromanager/flash-test"],
       "port": 5173
     }
   ]

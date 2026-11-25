@@ -1,6 +1,6 @@
 /** The conversation with Claude: messages, tool steps, flash requests, and the message box. */
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ChatEvent } from "@nextion-arduino/server/protocol";
+import type { ChatEvent } from "@micromanager/server/protocol";
 import { api } from "../api.ts";
 import { useDevice } from "../device.tsx";
 import type { ProjectState } from "../useProject.ts";

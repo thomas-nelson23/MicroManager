@@ -1,6 +1,6 @@
 # Spike: browser-capable flashing (2026-11-15)
 
-Findings from flashing the Nano Every and uploading Nextion TFTs without avrdude, on RadioShack.
+Findings from flashing the Nano Every and uploading Nextion TFTs without avrdude, on the developer's Linux PC.
 
 - `avrdude-trace.log`: avrdude 6.3 `-vvvv` session for `-patmega4809 -cjtag2updi` (the reference for
   `packages/flasher/src/jtag2updi.ts`). `devdescr-atmega4809.bin`: the 299-byte device descriptor it sends.
