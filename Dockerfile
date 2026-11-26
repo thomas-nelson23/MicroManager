@@ -37,15 +37,21 @@ RUN arduino-cli core update-index \
  && rm -rf /opt/arduino/staging /opt/arduino/packages/rp2040/tools/pqt-gcc-riscv /opt/arduino/packages/rp2040/tools/pqt-openocd
 RUN arduino-cli core install esp32:esp32 \
  && cd /opt/arduino/packages/esp32/tools \
- && rm -rf riscv32-esp-elf-gcc riscv32-esp-elf-gdb xtensa-esp-elf-gdb openocd-esp32 \
- && find esp32-arduino-libs -mindepth 2 -maxdepth 2 -type d -name 'esp32*' ! -name esp32 ! -name esp32s3 -exec rm -rf {} + \
+ && rm -rf esp-rv32 riscv32-esp-elf-gcc riscv32-esp-elf-gdb xtensa-esp-elf-gdb openocd-esp32 \
+ && for d in *-libs; do case "$d" in esp32-libs|esp32s3-libs) ;; *) rm -rf "$d" ;; esac; done \
  && rm -rf /opt/arduino/staging \
- && du -sh /opt/arduino/packages/esp32
+ && ls /opt/arduino/packages/esp32/tools && du -sh /opt/arduino/packages/esp32
 
 WORKDIR /app
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./
 COPY --from=build /app/packages ./packages
+# Smoke test: the pruned ESP32 core still builds the new-project sketch, merged image included.
+RUN for f in esp32:esp32:esp32 esp32:esp32:esp32s3; do \
+      ARDUINO_DIRECTORIES_USER=/tmp/arduino-user arduino-cli compile --fqbn "$f" --output-dir /tmp/esp-build packages/server/template/sketch \
+      && test -s /tmp/esp-build/sketch.ino.merged.bin && rm -rf /tmp/esp-build || exit 1; \
+    done \
+ && rm -rf /tmp/arduino* /root/.cache
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh /app/packages/server/nextion/nxbuild.sh
 
