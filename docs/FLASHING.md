@@ -34,3 +34,20 @@ into BOOTSEL (1200-baud touch), and the first time per visit you pick the RPI-RP
 picker and allow editing. A blank board, or one whose sketch has crashed, needs BOOT (BOOTSEL) held while
 plugging it in or pressing reset. The flash dialog also offers the .uf2 to drag onto the drive by hand.
 On Linux the drive has to be mounted (most desktops do that when it appears).
+
+## ESP32 DevKitC and ESP32-S3 DevKitC-1
+
+Plug it in, press **Flash**, pick the port (a CP210x or CH340 USB serial). The page puts the ESP32 in its ROM
+bootloader through the USB chip's reset lines, the way esptool does, and writes the bootloader, partition
+table and sketch. Saved settings (NVS, `Preferences`) and files (SPIFFS, LittleFS) are left as they are.
+On an ESP32-S3 DevKitC-1, use the USB port marked **UART** (or COM): it is the sketch's `Serial`, which the
+display traffic goes through.
+
+If the page can't reach the bootloader (some boards and clones have no auto-reset circuit), hold **BOOT**,
+press and release **EN** (or RST), let go of BOOT, and flash again. Each build's sketch can also be downloaded
+as a merged .bin, which `esptool.py write_flash 0x0 sketch.bin` (or Espressif's web flasher) writes whole;
+that also erases saved settings.
+
+On Linux your user needs serial access (`dialout`, or `uucp` on Arch-based systems). Older CH340 drivers on
+macOS may need WCH's driver.
+

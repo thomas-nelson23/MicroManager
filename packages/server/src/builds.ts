@@ -66,9 +66,11 @@ export async function buildSketch(id: string, outDir: string): Promise<BuildPart
   const seconds = Math.round((Date.now() - t0) / 100) / 10;
   if (r.code !== 0) return { ok: false, seconds, error: tail(r.out) };
   const size = sketchSize(r.out);
-  // AVR and Teensy builds flash a .hex; RP2040 builds a .uf2 for its BOOTSEL drive.
-  const ext = (await fs.stat(path.join(outDir, "arduino", "sketch.ino.uf2")).then(() => true, () => false)) ? "uf2" : "hex";
-  await fs.copyFile(path.join(outDir, "arduino", `sketch.ino.${ext}`), path.join(outDir, `sketch.${ext}`));
+  // AVR and Teensy builds flash a .hex; RP2040 builds a .uf2 for its BOOTSEL drive; ESP32 builds the
+  // merged image (bootloader, partition table, boot_app0 and the app in one .bin, written at 0x0).
+  const has = (f: string) => fs.stat(path.join(outDir, "arduino", f)).then(() => true, () => false);
+  const [src, ext] = (await has("sketch.ino.merged.bin")) ? ["sketch.ino.merged.bin", "bin"] : (await has("sketch.ino.uf2")) ? ["sketch.ino.uf2", "uf2"] : ["sketch.ino.hex", "hex"];
+  await fs.copyFile(path.join(outDir, "arduino", src), path.join(outDir, `sketch.${ext}`));
   await fs.rm(path.join(outDir, "arduino"), { recursive: true, force: true });
   return { ok: true, file: `sketch.${ext}`, seconds, ...size };
 }

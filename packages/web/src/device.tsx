@@ -1,8 +1,9 @@
 /**
  * The USB device on this computer: choosing the port, flashing builds and sending display commands.
  * One operation at a time. The display always goes through Web Serial (the sketch's NexPass); sketches
- * go to a Nano Every over Web Serial (UPDI), to a Teensy over WebHID (its HalfKay bootloader) and to an
- * RP2040 as a UF2 file copied onto its BOOTSEL drive (File System Access).
+ * go to a Nano Every over Web Serial (UPDI), to a Teensy over WebHID (its HalfKay bootloader), to an
+ * RP2040 as a UF2 file copied onto its BOOTSEL drive (File System Access) and to an ESP32 over Web Serial
+ * (its ROM bootloader, through esptool-js).
  */
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -11,6 +12,9 @@ import {
   flashTeensy,
   openDisplay,
   checkUf2,
+  checkEsp32Image,
+  esp32Reset,
+  ESPRESSIF_VID,
   parseIntelHex,
   resetBoard,
   RP2040_VIDS,
@@ -29,8 +33,11 @@ import { WebHidHalfKay } from "@micromanager/flasher/web-hid";
 import { canWriteDrives, Uf2Drive } from "@micromanager/flasher/web-uf2";
 
 /** How the current project's board is flashed (from its FQBN). */
-export type BoardKind = "nano-every" | "teensy" | "rp2040";
-export const boardKind = (fqbn: string): BoardKind => (fqbn.startsWith("teensy:") ? "teensy" : fqbn.startsWith("rp2040:") ? "rp2040" : "nano-every");
+export type BoardKind = "nano-every" | "teensy" | "rp2040" | "esp32";
+export const boardKind = (fqbn: string): BoardKind =>
+  fqbn.startsWith("teensy:") ? "teensy" : fqbn.startsWith("rp2040:") ? "rp2040" : fqbn.startsWith("esp32:") ? "esp32" : "nano-every";
+/** Boards flashed through their serial port, so flashing needs one chosen. */
+const needsPort = (kind: BoardKind) => kind === "nano-every" || kind === "esp32";
 
 /** The flash is waiting for a click: to allow the Teensy bootloader, or to pick the Pico's drive (with the .uf2 to copy by hand instead). */
 export type BootloaderPrompt = { kind: "teensy" } | { kind: "rp2040"; fileUrl: string };
@@ -103,10 +110,13 @@ const SERIAL_FILTERS: SerialPortFilter[] = [
   { usbVendorId: 0x10c4 },
   { usbVendorId: TEENSY_VID },
   ...RP2040_VIDS.map((usbVendorId) => ({ usbVendorId })),
+  { usbVendorId: ESPRESSIF_VID },
 ];
 
-/** Boards whose USB serial is part of the sketch, so it is a new port after every reboot. */
-const isRebootingPort = (p: SerialPort) => [TEENSY_VID, ...RP2040_VIDS].includes(p.getInfo().usbVendorId ?? -1);
+/** Boards whose USB serial is part of the chip, so it is a new port after every reboot. */
+const isRebootingPort = (p: SerialPort) => [TEENSY_VID, ...RP2040_VIDS, ESPRESSIF_VID].includes(p.getInfo().usbVendorId ?? -1);
+/** An ESP32-S3 on its native USB port (not a USB-serial chip): it re-enumerates when it resets. */
+const isNativeEsp = (t: SerialTransport) => t instanceof WebSerialTransport && t.port.getInfo().usbVendorId === ESPRESSIF_VID;
 const vidsFor = (kind: BoardKind) => (kind === "rp2040" ? RP2040_VIDS : [TEENSY_VID]);
 
 function label(p: SerialPort): string {
@@ -116,6 +126,9 @@ function label(p: SerialPort): string {
   if (i.usbVendorId === TEENSY_VID) return "Teensy";
   if (i.usbVendorId === 0x2e8a) return "Raspberry Pi Pico";
   if (i.usbVendorId === 0x239a) return "Adafruit RP2040";
+  if (i.usbVendorId === ESPRESSIF_VID) return "ESP32 (native USB)";
+  if (i.usbVendorId === 0x10c4) return "USB serial (CP210x)";
+  if (i.usbVendorId === 0x1a86) return "USB serial (CH340)";
   return i.usbVendorId ? `USB ${i.usbVendorId.toString(16)}:${i.usbProductId?.toString(16)}` : "Serial port";
 }
 
@@ -269,6 +282,15 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
     (kind: BoardKind) =>
       async (port: SerialTransport): Promise<void> => {
         if (kind === "nano-every") return resetBoard(port);
+        if (kind === "esp32") {
+          // EN through RTS; a native-USB ESP32-S3 comes back as a new port.
+          const native = isNativeEsp(port);
+          rebooting.current = native;
+          await esp32Reset(port);
+          if (native) await rebindPort(port as WebSerialTransport, [ESPRESSIF_VID]);
+          rebooting.current = false;
+          return;
+        }
         // Teensy and RP2040: NexPass reboots the board when DTR drops after a TFT upload.
         rebooting.current = true;
         await teensyRestart(port);
@@ -309,7 +331,7 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
   }, [supported]);
 
   // A Teensy or Pico can be flashed without a serial port (blank board, or one held in its bootloader).
-  const ensurePort = useCallback(async () => !!tRef.current || (await choosePort()) || boardRef.current !== "nano-every", [choosePort]);
+  const ensurePort = useCallback(async () => !!tRef.current || (await choosePort()) || !needsPort(boardRef.current), [choosePort]);
 
   const answerDrive = useCallback((d: DriveChoice) => {
     setBootloaderPrompt(null);
@@ -452,6 +474,24 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
               rebooting.current = false;
               if (!t && job.screenUrl) throw new Error("the sketch is flashed, but its USB serial port didn't come back, so the screen wasn't uploaded");
               await sleep(1000);
+            } else if (kind === "esp32") {
+              if (!t) throw new Error("No device connected. Choose the board's port first.");
+              const { chip } = checkEsp32Image(bytes);
+              const native = isNativeEsp(t);
+              rebooting.current = native;
+              // esptool-js carries every chip's flasher stub: loaded only when an ESP32 is flashed
+              const { flashEsp32 } = await import("@micromanager/flasher/web-esp32");
+              await flashEsp32(t.port, bytes, {
+                chip,
+                progress: (p) => setBusy(p.stage === "connect" ? { label: "Connecting to the ESP32's bootloader" } : { label: "Writing sketch", done: p.done, total: p.total }),
+              });
+              if (native) {
+                setBusy({ label: "Waiting for the sketch to start" });
+                t = await rebindPort(t, [ESPRESSIF_VID]);
+                rebooting.current = false;
+                if (!t && job.screenUrl) throw new Error("the sketch is flashed, but the ESP32's USB port didn't come back, so the screen wasn't uploaded");
+              }
+              await sleep(1500); // let the sketch boot
             } else {
               if (!t) throw new Error("No device connected. Choose the board's port first.");
               await flashNanoEvery(t, parseIntelHex(new TextDecoder().decode(bytes)), progress);
@@ -490,7 +530,7 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
         } catch (e) {
           return { status: "failed" as const, message: e instanceof Error ? e.message : String(e) };
         }
-      }, boardRef.current === "nano-every" || !!job.screenUrl, false),
+      }, needsPort(boardRef.current) || !!job.screenUrl, false),
     [exclusive, halfKay, flashPico, rebindPort, restartFor],
   );
 

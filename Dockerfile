@@ -26,13 +26,21 @@ RUN apt-get update \
 # The Teensy core (teensy:avr, for the Teensy 4.1) comes from PJRC's board manager index, the RP2040
 # core (rp2040:rp2040, for the Raspberry Pi Pico) from arduino-pico's. Its RISC-V compiler (RP2350
 # only) and OpenOCD (debug probes) are dropped: RP2040 builds don't use them, and they are ~700 MB.
+# The ESP32 core (esp32:esp32) comes from Espressif's index. Only ESP32 and ESP32-S3 boards are offered,
+# so the RISC-V compiler (C3/C6/H2/P4), the debuggers and the other chips' prebuilt libraries are dropped.
 ENV ARDUINO_DIRECTORIES_DATA=/opt/arduino \
     ARDUINO_DIRECTORIES_DOWNLOADS=/opt/arduino/staging \
     ARDUINO_DIRECTORIES_USER=/data/arduino \
-    ARDUINO_BOARD_MANAGER_ADDITIONAL_URLS="https://www.pjrc.com/teensy/package_teensy_index.json https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json"
+    ARDUINO_BOARD_MANAGER_ADDITIONAL_URLS="https://www.pjrc.com/teensy/package_teensy_index.json https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json https://espressif.github.io/arduino-esp32/package_esp32_index.json"
 RUN arduino-cli core update-index \
  && arduino-cli core install arduino:megaavr arduino:avr teensy:avr rp2040:rp2040 \
  && rm -rf /opt/arduino/staging /opt/arduino/packages/rp2040/tools/pqt-gcc-riscv /opt/arduino/packages/rp2040/tools/pqt-openocd
+RUN arduino-cli core install esp32:esp32 \
+ && cd /opt/arduino/packages/esp32/tools \
+ && rm -rf riscv32-esp-elf-gcc riscv32-esp-elf-gdb xtensa-esp-elf-gdb openocd-esp32 \
+ && find esp32-arduino-libs -mindepth 2 -maxdepth 2 -type d -name 'esp32*' ! -name esp32 ! -name esp32s3 -exec rm -rf {} + \
+ && rm -rf /opt/arduino/staging \
+ && du -sh /opt/arduino/packages/esp32
 
 WORKDIR /app
 COPY --from=build /app/node_modules ./node_modules

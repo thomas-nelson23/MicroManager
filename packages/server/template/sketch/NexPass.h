@@ -10,9 +10,11 @@
 // - When the host starts a TFT upload (`whmi-wri size,baud,0`), NexPass switches to raw passthrough at
 //   the upload baud and stays there. The host sends `baud=<upload baud>` first, so nothing changes on the
 //   display line once the display starts counting TFT bytes; the host restarts the board when the upload is done (on a Teensy
-//   or an RP2040, by dropping DTR, which makes NexPass reboot the board).
-// - Works on the Arduino Nano Every, the Teensy 4.1 (any of Serial1..Serial8 for the display) and the
-//   Raspberry Pi Pico (Serial1 or Serial2).
+//   or an RP2040, by dropping DTR, which makes NexPass reboot the board; on an ESP32, through its EN line).
+// - Works on the Arduino Nano Every, the Teensy 4.1 (any of Serial1..Serial8 for the display), the
+//   Raspberry Pi Pico (Serial1 or Serial2) and the ESP32 / ESP32-S3. On an ESP32 the display's pins are
+//   NexPass's, not the core's defaults (which change between core versions): RX 16 / TX 17 on an ESP32,
+//   RX 18 / TX 17 on an ESP32-S3. Other pins: NexPass.begin(Serial1, 9600, 115200, rxPin, txPin).
 // - Send instructions with NexPass.send("t0.txt=\"hi\"") (adds the FF FF FF terminator).
 //   For 3 s after each instruction from the host, send() drops the sketch's instructions, so they
 //   can't get between the host's handshake and its next instruction (a TFT upload fails otherwise).
@@ -36,14 +38,37 @@
 // never passed to the sketch's handler). 2: upload baud set with `baud=` beforehand is kept as is.
 #define NEXPASS_VERSION "2"
 
+#if defined(ARDUINO_ARCH_ESP32)
+// The display's pins on an ESP32 (see the top of this file); the stock wiring uses these.
+#if CONFIG_IDF_TARGET_ESP32S3
+#define NEXPASS_RX 18
+#define NEXPASS_TX 17
+#else
+#define NEXPASS_RX 16
+#define NEXPASS_TX 17
+#endif
+#endif
+
 class NexPassClass {
  public:
+#if defined(ARDUINO_ARCH_ESP32)
+  void begin(HardwareSerial &display, unsigned long displayBaud = 9600, unsigned long usbBaud = 115200, int8_t rxPin = NEXPASS_RX, int8_t txPin = NEXPASS_TX) {
+    disp_ = &display;
+    // The default 256-byte buffers can overflow while a TFT upload streams through at 115200.
+    Serial.setRxBufferSize(4096);
+    Serial.begin(usbBaud);
+    disp_->setRxBufferSize(1024);
+    disp_->begin(displayBaud, SERIAL_8N1, rxPin, txPin);
+    baud_ = (long)displayBaud;
+  }
+#else
   void begin(HardwareSerial &display, unsigned long displayBaud = 9600, unsigned long usbBaud = 115200) {
     disp_ = &display;
     Serial.begin(usbBaud);
     disp_->begin(displayBaud);
     baud_ = (long)displayBaud;
   }
+#endif
 
   void poll() {
     if (!disp_) return;
@@ -207,6 +232,9 @@ class NexPassClass {
 #else
     uart_set_baudrate(disp_ == &Serial1 ? uart0 : uart1, baud);
 #endif
+#elif defined(ARDUINO_ARCH_ESP32)
+    // ESP32: end() detaches the pins as well; change the running UART's baud instead.
+    disp_->updateBaudRate(baud);
 #else
     disp_->end();
     disp_->begin(baud);

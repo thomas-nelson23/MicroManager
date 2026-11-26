@@ -43,6 +43,10 @@ class Print {
   }
 };
 
+#ifdef ARDUINO_ARCH_ESP32
+#define SERIAL_8N1 0x800001c
+#endif
+
 class HardwareSerial : public Print {
  public:
   std::deque<uint8_t> in;  // bytes waiting to be read
@@ -54,6 +58,21 @@ class HardwareSerial : public Print {
     begins++;
   }
   void end() { ends++; }
+#ifdef ARDUINO_ARCH_ESP32
+  int8_t rx = -1, tx = -1;
+  size_t rxBuffer = 0;
+  int updates = 0;
+  void begin(unsigned long b, uint32_t, int8_t rxPin, int8_t txPin) {
+    begin(b);
+    rx = rxPin;
+    tx = txPin;
+  }
+  size_t setRxBufferSize(size_t n) { return rxBuffer = n; }
+  void updateBaudRate(unsigned long b) {
+    baud = (long)b;
+    updates++;
+  }
+#endif
   void flush() {}
   bool dtr() { return true; }
   int available() {

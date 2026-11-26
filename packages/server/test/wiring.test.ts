@@ -9,6 +9,8 @@ const nano = boardById("nano-every")!;
 const teensy = boardById("teensy41")!;
 const pico = boardById("pico")!;
 const propMaker = boardById("feather-rp2040-prop-maker")!;
+const esp32 = boardById("esp32-devkitc")!;
+const esp32s3 = boardById("esp32s3-devkitc")!;
 
 describe("boards", () => {
   it("has the real pin counts", () => {
@@ -16,6 +18,8 @@ describe("boards", () => {
     expect(teensy.pins).toHaveLength(48);
     expect(pico.pins).toHaveLength(40);
     expect(propMaker.pins).toHaveLength(28);
+    expect(esp32.pins).toHaveLength(38);
+    expect(esp32s3.pins).toHaveLength(44);
   });
   it("finds pins by name, alias and hint", () => {
     expect(nano.pins[findPins(nano, "d4")[0]!]!.name).toBe("D4");
@@ -29,12 +33,23 @@ describe("boards", () => {
     expect(findPins(pico, "GND")).toHaveLength(7);
     expect(propMaker.pins[findPins(propMaker, "0")[0]!]!.name).toBe("TX");
     expect(propMaker.pins[findPins(propMaker, "26")[0]!]!.name).toBe("A0");
+    expect(esp32.pins[findPins(esp32, "GPIO16")[0]!]!.name).toBe("IO16");
+    expect(esp32.pins[findPins(esp32, "RX2")[0]!]!.role).toBe("Serial1 RX");
+    expect(esp32.pins[findPins(esp32, "D2")[0]!]!.name).toBe("IO2");
+    expect(esp32.pins[findPins(esp32, "34")[0]!]!.caps).not.toContain("pwm");
+    expect(esp32.pins[findPins(esp32, "GPIO9")[0]!]!.kind).toBe("other");
+    expect(findPins(esp32, "GND")).toHaveLength(3);
+    expect(esp32s3.pins[findPins(esp32s3, "18")[0]!]!.role).toBe("Serial1 RX");
+    expect(findPins(esp32s3, "3V3")).toHaveLength(2);
   });
   it("recognises boards by USB id", () => {
     expect(boardByUsb(0x2341, 0x0058)?.id).toBe("nano-every");
     expect(boardByUsb(0x16c0, 0x0483)?.id).toBe("teensy41");
     expect(boardByUsb(0x2e8a, 0x000a)?.id).toBe("pico");
     expect(boardByUsb(0x239a, 0x8131)?.id).toBe("feather-rp2040-prop-maker");
+    expect(boardByUsb(0x10c4, 0xea60)?.id).toBe("esp32-devkitc");
+    expect(boardByUsb(0x10c4, 0xea60, esp32s3)?.id).toBe("esp32s3-devkitc");
+    expect(boardByUsb(0x2341, 0x0058, esp32s3)?.id).toBe("nano-every");
     expect(boardByUsb(0x1234, 1)).toBeUndefined();
     expect(boardByUsb()).toBeUndefined();
   });
@@ -155,6 +170,9 @@ describe("work the container does instead of Claude", () => {
     expect(checkWiring(teensy, t).filter((i) => i.level === "error")).toEqual([]);
     expect(remapWiring(t, teensy, nano).connections.map((c) => c.pin)).toEqual(["TX1", "5V", "D4", "A0"]);
     expect(remapWiring({ connections: [{ pin: "33", part: "LED" }] }, teensy, nano).connections[0]!.pin).toBe("33");
+    const e = remapWiring(w, nano, esp32);
+    expect(e.connections.map((c) => c.pin)).toEqual(["IO17", "5V", "IO4", "IO14"]);
+    expect(remapWiring(e, esp32, esp32s3).connections.map((c) => c.pin)).toEqual(["IO17", "5V", "IO4", "IO14"]);
   });
   it("takes the pin table out of hardware.md", () => {
     const md = "# Hardware\n\n| Pin | Goes to |\n|---|---|\n| D4 | IR receiver OUT |\n\nNotes stay.";

@@ -22,8 +22,8 @@ export interface Board {
   id: string;
   fqbn: string;
   name: string;
-  /** How the browser flashes it: UPDI over Web Serial, Teensy HalfKay over WebHID, or a UF2 file on the RP2040's BOOTSEL drive. */
-  flasher: "nano-every" | "teensy" | "rp2040";
+  /** How the browser flashes it: UPDI over Web Serial, Teensy HalfKay over WebHID, a UF2 file on the RP2040's BOOTSEL drive, or the ESP32's ROM bootloader over Web Serial (esptool). */
+  flasher: "nano-every" | "teensy" | "rp2040" | "esp32";
   /** Logic level of the I/O pins, in volts. */
   volts: number;
   /** True when a pin survives a 5 V signal. */
@@ -184,6 +184,114 @@ const PROP_MAKER_PINS: BoardPin[] = [
   fp("SDA", 2, "R", ["i2c"], "SDA"),
 ];
 
+// ESP32 (Espressif arduino-esp32 core). Names are the silkscreen's "IO16" (written `16` in code);
+// "GPIO16", "16", "D16" and "G16" are aliases. NexPass puts the display on
+// Serial1 at fixed pins (ESP32: RX 16 / TX 17, the pins clone boards label RX2/TX2; ESP32-S3: RX 18 /
+// TX 17), whatever the core's own defaults are, so the stock wiring holds on every core version.
+interface EspPin {
+  caps?: PinCap[];
+  role?: string;
+  /** Not usable as an I/O at all (wired to the module's flash). */
+  flash?: boolean;
+}
+function esp(n: number, side: "L" | "R", info: Record<number, EspPin>, analog: Set<number>, more: string[] = []): BoardPin {
+  const p = info[n] ?? {};
+  if (p.flash) return { name: `IO${n}`, side, kind: "other", caps: [], aliases: [String(n), `GPIO${n}`], role: p.role ?? "flash" };
+  const caps: PinCap[] = [...(p.caps ?? ["pwm"])];
+  if (analog.has(n)) caps.push("analog");
+  if (p.role?.includes("Serial")) caps.push("serial");
+  if (p.role && /SDA|SCL/.test(p.role)) caps.push("i2c");
+  if (p.role && /MOSI|MISO|SCK|CS/.test(p.role)) caps.push("spi");
+  return io(`IO${n}`, side, caps, { aliases: [String(n), `GPIO${n}`, `D${n}`, `G${n}`, ...more], ...(p.role ? { role: p.role } : {}) });
+}
+
+// ESP32-WROOM-32 / ESP32-DevKitC: ADC1 on 32-39, ADC2 on 0/2/4/12-15/25-27 (ADC2 doesn't read while Wi-Fi is on).
+const ESP32_ANALOG = new Set([0, 2, 4, 12, 13, 14, 15, 25, 26, 27, 32, 33, 34, 35, 36, 39]);
+const ESP32_INFO: Record<number, EspPin> = {
+  0: { role: "BOOT" },
+  1: { role: "USB TX" },
+  2: { role: "strapping" },
+  3: { role: "USB RX" },
+  5: { role: "CS" },
+  6: { flash: true }, 7: { flash: true }, 8: { flash: true }, 9: { flash: true }, 10: { flash: true }, 11: { flash: true },
+  12: { role: "strapping" },
+  15: { role: "strapping" },
+  16: { role: "Serial1 RX" },
+  17: { role: "Serial1 TX" },
+  18: { role: "SCK" },
+  19: { role: "MISO" },
+  21: { role: "SDA" },
+  22: { role: "SCL" },
+  23: { role: "MOSI" },
+  25: { role: "DAC1" },
+  26: { role: "DAC2" },
+  34: { caps: [], role: "input only" },
+  35: { caps: [], role: "input only" },
+  36: { caps: [], role: "input only" },
+  39: { caps: [], role: "input only" },
+};
+const e32 = (n: number, side: "L" | "R", more: string[] = []) => esp(n, side, ESP32_INFO, ESP32_ANALOG, more);
+
+// ESP32-DevKitC V4 (38 pins), USB at the top: J3 on the left, J2 on the right, each read from the USB end.
+const ESP32_DEVKITC_PINS: BoardPin[] = [
+  e32(6, "L", ["CLK"]), e32(7, "L", ["SD0"]), e32(8, "L", ["SD1"]),
+  e32(15, "L"), e32(2, "L"), e32(0, "L"), e32(4, "L"), e32(16, "L", ["RX2"]), e32(17, "L", ["TX2"]),
+  e32(5, "L"), e32(18, "L"), e32(19, "L"), gnd("L"), e32(21, "L"), e32(3, "L", ["RX", "RX0", "RXD0"]), e32(1, "L", ["TX", "TX0", "TXD0"]),
+  e32(22, "L"), e32(23, "L"), gnd("L"),
+  fixed("5V", "R", "power", ["VIN", "VBUS"]),
+  e32(11, "R", ["CMD"]), e32(10, "R", ["SD3"]), e32(9, "R", ["SD2"]),
+  e32(13, "R"), gnd("R"), e32(12, "R"), e32(14, "R"), e32(27, "R"), e32(26, "R"), e32(25, "R"), e32(33, "R"), e32(32, "R"),
+  e32(35, "R"), e32(34, "R"), e32(39, "R", ["VN", "SENSOR_VN"]), e32(36, "R", ["VP", "SENSOR_VP"]),
+  fixed("EN", "R", "other", ["RST", "RESET"]),
+  fixed("3V3", "R", "power", ["3.3V"]),
+];
+
+// ESP32-S3: ADC on GPIO1-20 (ADC2 = 11-20, not while Wi-Fi is on). 19/20 are the native USB pins,
+// 35-37 belong to the octal PSRAM on N8R8/N16R8 modules, 26-32 to the flash (not broken out).
+const ESP32S3_ANALOG = new Set(Array.from({ length: 20 }, (_, i) => i + 1));
+const ESP32S3_INFO: Record<number, EspPin> = {
+  0: { role: "BOOT" },
+  3: { role: "strapping" },
+  8: { role: "SDA" },
+  9: { role: "SCL" },
+  10: { role: "CS" },
+  11: { role: "MOSI" },
+  12: { role: "SCK" },
+  13: { role: "MISO" },
+  17: { role: "Serial1 TX" },
+  18: { role: "Serial1 RX" },
+  19: { role: "USB D-" },
+  20: { role: "USB D+" },
+  35: { role: "PSRAM" },
+  36: { role: "PSRAM" },
+  37: { role: "PSRAM" },
+  38: { role: "RGB LED v1.1" },
+  43: { role: "USB TX" },
+  44: { role: "USB RX" },
+  45: { role: "strapping" },
+  46: { role: "strapping" },
+  48: { role: "RGB LED v1.0" },
+};
+const s3 = (n: number, side: "L" | "R", more: string[] = []) => esp(n, side, ESP32S3_INFO, ESP32S3_ANALOG, more);
+
+// ESP32-S3-DevKitC-1 (2 x 22 pins), USB at the top: J3 on the left, J1 on the right, each read from the USB end.
+const ESP32S3_DEVKITC_PINS: BoardPin[] = [
+  gnd("L"), gnd("L"),
+  s3(19, "L"), s3(20, "L"), s3(21, "L"), s3(47, "L"), s3(48, "L"), s3(45, "L"), s3(0, "L"),
+  s3(35, "L"), s3(36, "L"), s3(37, "L"), s3(38, "L"), s3(39, "L"), s3(40, "L"), s3(41, "L"), s3(42, "L"),
+  s3(2, "L"), s3(1, "L"), s3(44, "L", ["RX", "RX0"]), s3(43, "L", ["TX", "TX0"]), gnd("L"),
+  gnd("R"),
+  fixed("5V", "R", "power", ["5V0", "VIN", "VBUS"]),
+  s3(14, "R"), s3(13, "R"), s3(12, "R"), s3(11, "R"), s3(10, "R"), s3(9, "R"), s3(46, "R"), s3(3, "R"), s3(8, "R"),
+  s3(18, "R"), s3(17, "R"), s3(16, "R"), s3(15, "R"), s3(7, "R"), s3(6, "R"), s3(5, "R"), s3(4, "R"),
+  fixed("RST", "R", "other", ["EN", "RESET"]),
+  fixed("3V3", "R", "power", ["3.3V"]),
+  fixed("3V3", "R", "power", ["3.3V"]),
+];
+
+/** USB-serial bridges ESP32 dev boards use (CP210x, CH340/CH9102), and Espressif's own native USB. */
+const ESP32_USB = [{ vendorId: 0x10c4, productId: 0xea60 }, { vendorId: 0x1a86 }, { vendorId: 0x303a }];
+
 export const BOARDS: Board[] = [
   {
     id: "nano-every",
@@ -229,15 +337,41 @@ export const BOARDS: Board[] = [
     usb: [{ vendorId: 0x239a, productId: 0x8131 }, { vendorId: 0x239a, productId: 0xc131 }],
     pins: PROP_MAKER_PINS,
   },
+  {
+    id: "esp32-devkitc",
+    fqbn: "esp32:esp32:esp32",
+    name: "ESP32 DevKitC (WROOM-32)",
+    flasher: "esp32",
+    volts: 3.3,
+    fiveVoltTolerant: false,
+    flashKb: 1280,
+    usb: ESP32_USB,
+    pins: ESP32_DEVKITC_PINS,
+  },
+  {
+    id: "esp32s3-devkitc",
+    fqbn: "esp32:esp32:esp32s3",
+    name: "ESP32-S3 DevKitC-1",
+    flasher: "esp32",
+    volts: 3.3,
+    fiveVoltTolerant: false,
+    flashKb: 1280,
+    usb: ESP32_USB,
+    pins: ESP32S3_DEVKITC_PINS,
+  },
 ];
 
 export const boardById = (id: string) => BOARDS.find((b) => b.id === id);
 export const boardByFqbn = (fqbn: string) => BOARDS.find((b) => b.fqbn === fqbn);
 
-/** The board a USB serial port belongs to, if it is one we know. */
-export function boardByUsb(vendorId?: number, productId?: number): Board | undefined {
+/**
+ * The board a USB serial port belongs to, if it is one we know. Several boards can share a USB id (ESP32
+ * dev boards all use the same USB-serial chips): `prefer`, usually the project's board, wins when it fits.
+ */
+export function boardByUsb(vendorId?: number, productId?: number, prefer?: Board): Board | undefined {
   if (vendorId === undefined) return undefined;
-  return BOARDS.find((b) => b.usb.some((u) => u.vendorId === vendorId && (u.productId === undefined || u.productId === productId)));
+  const fits = (b: Board) => b.usb.some((u) => u.vendorId === vendorId && (u.productId === undefined || u.productId === productId));
+  return prefer && fits(prefer) ? prefer : BOARDS.find(fits);
 }
 
 /** "1 (TX1)" -> "1", " d4 " -> "D4". */

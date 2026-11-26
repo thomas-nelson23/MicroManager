@@ -277,7 +277,7 @@ function StatusStrip({ detail, project, flasher, ask, toChat, navigate, onBuilds
   const locked = project.busy || !!device.busy;
 
   const board = boards.find((b) => b.fqbn === meta.board.fqbn);
-  const plugged = device.usb ? boardByUsb(device.usb.vendorId, device.usb.productId) : undefined;
+  const plugged = device.usb ? boardByUsb(device.usb.vendorId, device.usb.productId, board) : undefined;
   const wrongBoard = plugged && board && plugged.id !== board.id ? plugged : null;
   const reported = device.display?.model;
   const wrongDisplay = reported && !reported.startsWith(meta.display.model) ? reported : null;

@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { compactReplies, freshReason, splitGuide } from "../src/chat.ts";
 import { componentInfo } from "../src/components.ts";
+import { BOARDS } from "../src/boards.ts";
 
 const guideMd = fs.readFileSync(path.join(import.meta.dirname, "..", "guide", "GUIDE.md"), "utf8");
 
@@ -28,7 +29,8 @@ describe("component_info", () => {
 describe("guide", () => {
   it("splits board notes off the shared part", () => {
     const { guide, boards } = splitGuide(guideMd);
-    expect([...boards.keys()]).toEqual(["arduino:megaavr:nona4809", "teensy:avr:teensy41", "rp2040:rp2040:rpipico", "rp2040:rp2040:adafruit_feather_prop_maker"]);
+    expect([...boards.keys()]).toEqual(["arduino:megaavr:nona4809", "teensy:avr:teensy41", "rp2040:rp2040:rpipico", "rp2040:rp2040:adafruit_feather_prop_maker", "esp32:esp32:esp32", "esp32:esp32:esp32s3"]);
+    for (const b of BOARDS) expect(boards.has(b.fqbn), b.fqbn).toBe(true);
     expect(boards.get("teensy:avr:teensy41")).toMatch(/not\s+5 V tolerant/);
     expect(guide).not.toContain("### board:");
     expect(guide).not.toContain("<!--");
