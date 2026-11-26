@@ -24,7 +24,7 @@ everything. Then you flash the board and the display straight from your browser.
 
 | Boards | Displays |
 |---|---|
-| Arduino Nano Every<br>Teensy 4.1<br>Raspberry Pi Pico (RP2040)<br>Adafruit Feather RP2040 Prop-Maker<br>ESP32 DevKitC (ESP32-WROOM-32)<br>ESP32-S3 DevKitC-1 | Nextion Basic, Discovery, Enhanced and Intelligent series |
+| Arduino Nano Every<br>Teensy 4.1<br>Raspberry Pi Pico (RP2040)<br>Adafruit Feather RP2040 Prop-Maker<br>Cheap Yellow Display (ESP32-2432S028R) | Nextion Basic, Discovery, Enhanced and Intelligent series; the Cheap Yellow Display uses its own built-in touch screen, drawn by the sketch with LVGL |
 
 Board-specific flashing notes (Teensy on Linux, RP2040 BOOTSEL, ESP32 BOOT button) are in [docs/FLASHING.md](docs/FLASHING.md).
 
