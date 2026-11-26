@@ -43,8 +43,13 @@ RUN arduino-cli core install esp32:esp32 \
  && ls /opt/arduino/packages/esp32/tools && du -sh /opt/arduino/packages/esp32
 # Libraries for boards with a built-in screen (the app's Screen.h): LVGL and LovyanGFX, pinned, outside
 # /data so the image owns them. lv_conf.h sits next to the lvgl folder, where LVGL looks for it.
+# LovyanGFX comes from a pinned develop commit: release 1.3.0 doesn't build on ESP32 core 4.x (IDF 6 renamed
+# the DAC functions its composite-video panel uses). Switch back to a release once one has the fix.
+ARG LOVYANGFX_COMMIT=973059c9b61ad250aadc270616193698cb4a463c
 RUN arduino-cli lib update-index \
- && ARDUINO_DIRECTORIES_USER=/opt/arduino-bundled arduino-cli lib install lvgl@9.6.0 LovyanGFX@1.3.0 \
+ && ARDUINO_DIRECTORIES_USER=/opt/arduino-bundled arduino-cli lib install lvgl@9.6.0 \
+ && curl -fsSL "https://github.com/lovyan03/LovyanGFX/archive/${LOVYANGFX_COMMIT}.tar.gz" | tar -xz -C /opt/arduino-bundled/libraries \
+ && mv "/opt/arduino-bundled/libraries/LovyanGFX-${LOVYANGFX_COMMIT}" /opt/arduino-bundled/libraries/LovyanGFX \
  && rm -rf /opt/arduino/staging
 COPY packages/server/screen/lv_conf.h /opt/arduino-bundled/libraries/lv_conf.h
 
