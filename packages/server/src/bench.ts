@@ -12,7 +12,7 @@ import { config } from "./config.ts";
 import type { ProjectHub } from "./hub.ts";
 import type { ChatEvent, ClientMessage } from "./protocol.ts";
 import { boardByFqbn } from "./boards.ts";
-import { listBuilds, markFlashed, projectDir, readMeta, readWiring, writeWiring } from "./projects.ts";
+import { hasBuiltInScreen, listBuilds, markFlashed, projectDir, readMeta, readWiring, writeWiring } from "./projects.ts";
 import { applyWiring, checkWiring, wiringLines } from "./wiring.ts";
 
 export type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
@@ -79,8 +79,12 @@ export function compactReplies(commands: string[], replies: unknown[]): string {
   return lines.join("\n") || `${commands.length} sent, no replies`;
 }
 
+/** What the Nextion-only tools answer on a board whose screen is built in. */
+const NO_NEXTION = "This board's screen is built in and drawn by the sketch (LVGL through Screen.h): there is no Nextion, hmi.txt or display commands. Change the sketch and ship target 'sketch'.";
+
 export function benchTools(projectId: string, hub: ProjectHub): BenchTool[] {
   const dir = projectDir(projectId);
+  const builtIn = async () => hasBuiltInScreen(await readMeta(projectId));
 
   const checkScreen = async (): Promise<{ ok: boolean; out: string }> => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "nxcheck-"));
@@ -147,6 +151,10 @@ export function benchTools(projectId: string, hub: ProjectHub): BenchTool[] {
       },
       async ({ target, label, flash, verify }) => {
         const lines: string[] = [];
+        if (await builtIn()) {
+          if (verify?.length) return text(`Nothing built: ${NO_NEXTION} Leave out verify.`, true);
+          target = "sketch";
+        }
         if (target !== "sketch") {
           const c = await checkScreen();
           if (!c.ok) return text(`check_screen FAILED, nothing built:\n${c.out}`, true);
@@ -197,6 +205,7 @@ export function benchTools(projectId: string, hub: ProjectHub): BenchTool[] {
       "Validate nextion/hmi.txt without building (ship does this too): shape, component types, attributes, text lengths, events, and that every obj.attr in event code exists.",
       {},
       async () => {
+        if (await builtIn()) return text(NO_NEXTION, true);
         const c = await checkScreen();
         return text(c.out, !c.ok);
       },
@@ -205,7 +214,7 @@ export function benchTools(projectId: string, hub: ProjectHub): BenchTool[] {
       "component_info",
       "A Nextion component's full attribute list (type, default, range, whether settable at runtime). Give an hmi.txt type name, objtype number or name prefix, e.g. 'slider', '122', 'bt'.",
       { type: z.string().min(1).max(40) },
-      async ({ type }) => text(componentInfo(type)),
+      async ({ type }) => ((await builtIn()) ? text(NO_NEXTION, true) : text(componentInfo(type))),
     ),
     tool(
       "flash",
@@ -244,6 +253,7 @@ export function benchTools(projectId: string, hub: ProjectHub): BenchTool[] {
         listen_seconds: z.number().min(0).max(30).optional().describe("Afterwards, collect events (e.g. touches) for this long"),
       },
       async ({ commands, listen_seconds }) => {
+        if (await builtIn()) return text(NO_NEXTION, true);
         const d = await displayCommands(commands, listen_seconds);
         return text(d.out, !d.ok);
       },

@@ -90,6 +90,14 @@ export function ProjectList({ navigate }: { navigate: (to: string) => void }) {
               {boards.map((b) => <option key={b.id} value={b.id}>{b.name} · {b.volts} V</option>)}
             </select>
           </label>
+          {boards.find((b) => b.id === boardId)?.screen ? (
+            <label className="np-field">
+              <span className="eyebrow">Display</span>
+              <select className="select" disabled value="">
+                <option value="">Built in · {boards.find((b) => b.id === boardId)!.screen!.inches}″</option>
+              </select>
+            </label>
+          ) : (
           <label className="np-field">
             <span className="eyebrow">Display</span>
             <select className="select" value={displayModel} onChange={(e) => setDisplayModel(e.target.value)}>
@@ -101,6 +109,7 @@ export function ProjectList({ navigate }: { navigate: (to: string) => void }) {
               ))}
             </select>
           </label>
+          )}
           <button className="btn md primary" type="submit" disabled={!defaultDisplay && !projects}><Icon name="plus" />Create</button>
         </form>
 
@@ -133,7 +142,7 @@ export function ProjectList({ navigate }: { navigate: (to: string) => void }) {
                       {p.description && <span className="project-desc">{p.description}</span>}
                     </td>
                     <td>{p.board.name}</td>
-                    <td className="mono">{p.display.model.replace(/_011$/, "")}<span className="dim"> · {p.display.width}×{p.display.height}</span></td>
+                    <td className="mono">{p.display.series === "Built-in" ? "Built in" : p.display.model.replace(/_011$/, "")}<span className="dim"> · {p.display.width}×{p.display.height}</span></td>
                     <td className={p.lastBuild && !p.lastBuild.ok ? "hot" : ""}>{p.lastBuild ? `#${p.lastBuild.n}${p.lastBuild.ok ? "" : " failed"} · ${ago(p.lastBuild.createdAt)}` : <span className="dim">none</span>}</td>
                     <td>{p.onDevice ? (p.lastBuild && p.onDevice === p.lastBuild.n ? `#${p.onDevice} · up to date` : `#${p.onDevice}`) : <span className="dim">—</span>}</td>
                     <td className="dim">{ago(p.updatedAt)}</td>

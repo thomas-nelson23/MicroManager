@@ -33,7 +33,15 @@ export interface Board {
   usb: { vendorId: number; productId?: number }[];
   /** Pins in physical order, top to bottom on each side. */
   pins: BoardPin[];
+  /**
+   * A screen built into the board, drawn by the sketch (LVGL through the app's Screen.h) instead of a
+   * Nextion. `lgfx` is the LovyanGFX board define that sets up its panel and touch.
+   */
+  screen?: { model: string; width: number; height: number; inches: number; lgfx: string };
 }
+
+/** The project display of a board with a built-in screen. */
+export const builtInDisplay = (s: NonNullable<Board["screen"]>) => ({ series: "Built-in" as const, model: s.model, width: s.width, height: s.height, inches: s.inches });
 
 const io = (name: string, side: "L" | "R", caps: PinCap[], extra: Partial<BoardPin> = {}): BoardPin => ({ name, side, kind: "io", caps: ["digital", "interrupt", ...caps], ...extra });
 const fixed = (name: string, side: "L" | "R", kind: BoardPin["kind"], aliases?: string[]): BoardPin => ({ name, side, kind, caps: [], ...(aliases ? { aliases } : {}) });
@@ -184,113 +192,39 @@ const PROP_MAKER_PINS: BoardPin[] = [
   fp("SDA", 2, "R", ["i2c"], "SDA"),
 ];
 
-// ESP32 (Espressif arduino-esp32 core). Names are the silkscreen's "IO16" (written `16` in code);
-// "GPIO16", "16", "D16" and "G16" are aliases. NexPass puts the display on
-// Serial1 at fixed pins (ESP32: RX 16 / TX 17, the pins clone boards label RX2/TX2; ESP32-S3: RX 18 /
-// TX 17), whatever the core's own defaults are, so the stock wiring holds on every core version.
-interface EspPin {
-  caps?: PinCap[];
-  role?: string;
-  /** Not usable as an I/O at all (wired to the module's flash). */
-  flash?: boolean;
-}
-function esp(n: number, side: "L" | "R", info: Record<number, EspPin>, analog: Set<number>, more: string[] = []): BoardPin {
-  const p = info[n] ?? {};
-  if (p.flash) return { name: `IO${n}`, side, kind: "other", caps: [], aliases: [String(n), `GPIO${n}`], role: p.role ?? "flash" };
-  const caps: PinCap[] = [...(p.caps ?? ["pwm"])];
-  if (analog.has(n)) caps.push("analog");
-  if (p.role?.includes("Serial")) caps.push("serial");
-  if (p.role && /SDA|SCL/.test(p.role)) caps.push("i2c");
-  if (p.role && /MOSI|MISO|SCK|CS/.test(p.role)) caps.push("spi");
-  return io(`IO${n}`, side, caps, { aliases: [String(n), `GPIO${n}`, `D${n}`, `G${n}`, ...more], ...(p.role ? { role: p.role } : {}) });
-}
-
-// ESP32-WROOM-32 / ESP32-DevKitC: ADC1 on 32-39, ADC2 on 0/2/4/12-15/25-27 (ADC2 doesn't read while Wi-Fi is on).
-const ESP32_ANALOG = new Set([0, 2, 4, 12, 13, 14, 15, 25, 26, 27, 32, 33, 34, 35, 36, 39]);
-const ESP32_INFO: Record<number, EspPin> = {
-  0: { role: "BOOT" },
-  1: { role: "USB TX" },
-  2: { role: "strapping" },
-  3: { role: "USB RX" },
-  5: { role: "CS" },
-  6: { flash: true }, 7: { flash: true }, 8: { flash: true }, 9: { flash: true }, 10: { flash: true }, 11: { flash: true },
-  12: { role: "strapping" },
-  15: { role: "strapping" },
-  16: { role: "Serial1 RX" },
-  17: { role: "Serial1 TX" },
-  18: { role: "SCK" },
-  19: { role: "MISO" },
-  21: { role: "SDA" },
-  22: { role: "SCL" },
-  23: { role: "MOSI" },
-  25: { role: "DAC1" },
-  26: { role: "DAC2" },
-  34: { caps: [], role: "input only" },
-  35: { caps: [], role: "input only" },
-  36: { caps: [], role: "input only" },
-  39: { caps: [], role: "input only" },
-};
-const e32 = (n: number, side: "L" | "R", more: string[] = []) => esp(n, side, ESP32_INFO, ESP32_ANALOG, more);
-
-// ESP32-DevKitC V4 (38 pins), USB at the top: J3 on the left, J2 on the right, each read from the USB end.
-const ESP32_DEVKITC_PINS: BoardPin[] = [
-  e32(6, "L", ["CLK"]), e32(7, "L", ["SD0"]), e32(8, "L", ["SD1"]),
-  e32(15, "L"), e32(2, "L"), e32(0, "L"), e32(4, "L"), e32(16, "L", ["RX2"]), e32(17, "L", ["TX2"]),
-  e32(5, "L"), e32(18, "L"), e32(19, "L"), gnd("L"), e32(21, "L"), e32(3, "L", ["RX", "RX0", "RXD0"]), e32(1, "L", ["TX", "TX0", "TXD0"]),
-  e32(22, "L"), e32(23, "L"), gnd("L"),
-  fixed("5V", "R", "power", ["VIN", "VBUS"]),
-  e32(11, "R", ["CMD"]), e32(10, "R", ["SD3"]), e32(9, "R", ["SD2"]),
-  e32(13, "R"), gnd("R"), e32(12, "R"), e32(14, "R"), e32(27, "R"), e32(26, "R"), e32(25, "R"), e32(33, "R"), e32(32, "R"),
-  e32(35, "R"), e32(34, "R"), e32(39, "R", ["VN", "SENSOR_VN"]), e32(36, "R", ["VP", "SENSOR_VP"]),
-  fixed("EN", "R", "other", ["RST", "RESET"]),
-  fixed("3V3", "R", "power", ["3.3V"]),
-];
-
-// ESP32-S3: ADC on GPIO1-20 (ADC2 = 11-20, not while Wi-Fi is on). 19/20 are the native USB pins,
-// 35-37 belong to the octal PSRAM on N8R8/N16R8 modules, 26-32 to the flash (not broken out).
-const ESP32S3_ANALOG = new Set(Array.from({ length: 20 }, (_, i) => i + 1));
-const ESP32S3_INFO: Record<number, EspPin> = {
-  0: { role: "BOOT" },
-  3: { role: "strapping" },
-  8: { role: "SDA" },
-  9: { role: "SCL" },
-  10: { role: "CS" },
-  11: { role: "MOSI" },
-  12: { role: "SCK" },
-  13: { role: "MISO" },
-  17: { role: "Serial1 TX" },
-  18: { role: "Serial1 RX" },
-  19: { role: "USB D-" },
-  20: { role: "USB D+" },
-  35: { role: "PSRAM" },
-  36: { role: "PSRAM" },
-  37: { role: "PSRAM" },
-  38: { role: "RGB LED v1.1" },
-  43: { role: "USB TX" },
-  44: { role: "USB RX" },
-  45: { role: "strapping" },
-  46: { role: "strapping" },
-  48: { role: "RGB LED v1.0" },
-};
-const s3 = (n: number, side: "L" | "R", more: string[] = []) => esp(n, side, ESP32S3_INFO, ESP32S3_ANALOG, more);
-
-// ESP32-S3-DevKitC-1 (2 x 22 pins), USB at the top: J3 on the left, J1 on the right, each read from the USB end.
-const ESP32S3_DEVKITC_PINS: BoardPin[] = [
-  gnd("L"), gnd("L"),
-  s3(19, "L"), s3(20, "L"), s3(21, "L"), s3(47, "L"), s3(48, "L"), s3(45, "L"), s3(0, "L"),
-  s3(35, "L"), s3(36, "L"), s3(37, "L"), s3(38, "L"), s3(39, "L"), s3(40, "L"), s3(41, "L"), s3(42, "L"),
-  s3(2, "L"), s3(1, "L"), s3(44, "L", ["RX", "RX0"]), s3(43, "L", ["TX", "TX0"]), gnd("L"),
+// Cheap Yellow Display (Sunton ESP32-2432S028R): an ESP32-WROOM-32 with a 2.8" 320x240 touch screen built
+// in. The screen (IO2, 12-15, backlight 21) and touch (IO25, 32, 33, 36, 39) take most pins; what is left is
+// on the connectors. Names are the silkscreen's IOn (written `n` in code). USB at the top: the P3 and CN1
+// connectors on the left, P1 (serial), the speaker and the built-in parts on the right.
+const cyd = (n: number, side: "L" | "R", caps: PinCap[], role?: string, more: string[] = []) =>
+  io(`IO${n}`, side, caps, { aliases: [String(n), `GPIO${n}`, `D${n}`, ...more], ...(role ? { role } : {}) });
+const builtIn = (n: number, side: "L" | "R", role: string): BoardPin => ({ name: `IO${n}`, side, kind: "other", caps: [], aliases: [String(n), `GPIO${n}`], role });
+const CYD_PINS: BoardPin[] = [
+  gnd("L"),
+  { ...cyd(35, "L", ["analog"], "P3, input only"), caps: ["digital", "analog"] },
+  cyd(22, "L", ["pwm", "i2c"], "P3 / CN1, SCL"),
+  builtIn(21, "L", "P3, backlight"),
+  gnd("L"),
+  cyd(27, "L", ["pwm", "analog", "i2c"], "CN1, SDA"),
+  fixed("3V3", "L", "power", ["3.3V"]),
+  fixed("VIN", "R", "power", ["5V", "VBUS"]),
+  cyd(1, "R", ["serial"], "P1 TX (USB serial)", ["TX", "TX0"]),
+  cyd(3, "R", ["serial"], "P1 RX (USB serial)", ["RX", "RX0"]),
   gnd("R"),
-  fixed("5V", "R", "power", ["5V0", "VIN", "VBUS"]),
-  s3(14, "R"), s3(13, "R"), s3(12, "R"), s3(11, "R"), s3(10, "R"), s3(9, "R"), s3(46, "R"), s3(3, "R"), s3(8, "R"),
-  s3(18, "R"), s3(17, "R"), s3(16, "R"), s3(15, "R"), s3(7, "R"), s3(6, "R"), s3(5, "R"), s3(4, "R"),
-  fixed("RST", "R", "other", ["EN", "RESET"]),
-  fixed("3V3", "R", "power", ["3.3V"]),
-  fixed("3V3", "R", "power", ["3.3V"]),
+  cyd(26, "R", ["pwm"], "P4 speaker amp", ["SPK", "DAC2"]),
+  cyd(0, "R", [], "BOOT button", ["BOOT"]),
+  builtIn(4, "R", "RGB LED red (LOW = on)"),
+  builtIn(16, "R", "RGB LED green (LOW = on)"),
+  builtIn(17, "R", "RGB LED blue (LOW = on)"),
+  builtIn(34, "R", "light sensor (LDR)"),
+  builtIn(5, "R", "SD card CS"),
+  builtIn(18, "R", "SD card SCK"),
+  builtIn(19, "R", "SD card MISO"),
+  builtIn(23, "R", "SD card MOSI"),
 ];
 
-/** USB-serial bridges ESP32 dev boards use (CP210x, CH340/CH9102), and Espressif's own native USB. */
-const ESP32_USB = [{ vendorId: 0x10c4, productId: 0xea60 }, { vendorId: 0x1a86 }, { vendorId: 0x303a }];
+/** USB-serial chips ESP32 boards use: WCH CH340/CH9102, Silicon Labs CP210x. */
+const ESP32_USB = [{ vendorId: 0x1a86 }, { vendorId: 0x10c4, productId: 0xea60 }];
 
 export const BOARDS: Board[] = [
   {
@@ -338,26 +272,17 @@ export const BOARDS: Board[] = [
     pins: PROP_MAKER_PINS,
   },
   {
-    id: "esp32-devkitc",
-    fqbn: "esp32:esp32:esp32",
-    name: "ESP32 DevKitC (WROOM-32)",
+    id: "cyd-2432s028r",
+    // huge_app: 3 MB for the sketch (LVGL and its fonts are big), no OTA
+    fqbn: "esp32:esp32:esp32:PartitionScheme=huge_app",
+    name: "Cheap Yellow Display (ESP32-2432S028R)",
     flasher: "esp32",
     volts: 3.3,
     fiveVoltTolerant: false,
-    flashKb: 1280,
+    flashKb: 3072,
     usb: ESP32_USB,
-    pins: ESP32_DEVKITC_PINS,
-  },
-  {
-    id: "esp32s3-devkitc",
-    fqbn: "esp32:esp32:esp32s3",
-    name: "ESP32-S3 DevKitC-1",
-    flasher: "esp32",
-    volts: 3.3,
-    fiveVoltTolerant: false,
-    flashKb: 1280,
-    usb: ESP32_USB,
-    pins: ESP32S3_DEVKITC_PINS,
+    pins: CYD_PINS,
+    screen: { model: "ESP32-2432S028R", width: 320, height: 240, inches: 2.8, lgfx: "LGFX_ESP32_2432S028" },
   },
 ];
 
@@ -366,7 +291,7 @@ export const boardByFqbn = (fqbn: string) => BOARDS.find((b) => b.fqbn === fqbn)
 
 /**
  * The board a USB serial port belongs to, if it is one we know. Several boards can share a USB id (ESP32
- * dev boards all use the same USB-serial chips): `prefer`, usually the project's board, wins when it fits.
+ * boards use common USB-serial chips): `prefer`, usually the project's board, wins when it fits.
  */
 export function boardByUsb(vendorId?: number, productId?: number, prefer?: Board): Board | undefined {
   if (vendorId === undefined) return undefined;

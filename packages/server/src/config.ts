@@ -64,6 +64,8 @@ export const config = {
   },
 
   arduinoCli: env.ARDUINO_CLI ?? "arduino-cli",
+  /** Libraries baked into the image for boards with a built-in screen (lvgl, LovyanGFX, lv_conf.h). */
+  bundledLibraries: env.ARDUINO_BUNDLED_LIBRARIES ?? "/opt/arduino-bundled/libraries",
 
   vm: {
     host: env.VM_HOST ?? "",

@@ -50,11 +50,6 @@ static void handler(const char *req) {
 
 int main() {
   NexPass.begin(Serial1);
-#ifdef ARDUINO_ARCH_ESP32
-  // ESP32: the display goes on NexPass's pins, with buffers big enough for a TFT upload.
-  expect("esp32 display pins", std::to_string(Serial1.rx) + "/" + std::to_string(Serial1.tx), "16/17");
-  expect("esp32 usb buffer", std::to_string(Serial.rxBuffer), "4096");
-#endif
 
   // No handler yet: the request still gets an answer and an end marker, and never reaches the display.
   reset();
@@ -136,9 +131,6 @@ int main() {
   NexPass.poll();
   expect("baud= forwarded", Serial1.out, "baud=115200" + E);
   expect("baud= switches", std::to_string(Serial1.baud), "115200");
-#ifdef ARDUINO_ARCH_ESP32
-  expect("esp32 baud= changes the running UART", std::to_string(Serial1.updates) + " " + std::to_string(Serial1.ends), "1 0");
-#endif
   Serial1.begins = 0;
   Serial1.ends = 0;
   Serial.feed("whmi-wri 100,115200,0" + E);

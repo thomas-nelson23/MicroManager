@@ -1,8 +1,0 @@
-{
-  "connections": [
-    {"pin": "IO17", "part": "Nextion display", "partPin": "RX", "color": "yellow"},
-    {"pin": "IO16", "part": "Nextion display", "partPin": "TX", "color": "blue", "signal": "3.3V"},
-    {"pin": "5V", "part": "Nextion display", "partPin": "5V", "color": "red"},
-    {"pin": "GND", "part": "Nextion display", "partPin": "GND", "color": "black"}
-  ]
-}

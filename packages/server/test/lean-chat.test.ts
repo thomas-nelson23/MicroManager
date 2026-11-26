@@ -29,7 +29,7 @@ describe("component_info", () => {
 describe("guide", () => {
   it("splits board notes off the shared part", () => {
     const { guide, boards } = splitGuide(guideMd);
-    expect([...boards.keys()]).toEqual(["arduino:megaavr:nona4809", "teensy:avr:teensy41", "rp2040:rp2040:rpipico", "rp2040:rp2040:adafruit_feather_prop_maker", "esp32:esp32:esp32", "esp32:esp32:esp32s3"]);
+    expect([...boards.keys()]).toEqual(["arduino:megaavr:nona4809", "teensy:avr:teensy41", "rp2040:rp2040:rpipico", "rp2040:rp2040:adafruit_feather_prop_maker", "esp32:esp32:esp32:PartitionScheme=huge_app"]);
     for (const b of BOARDS) expect(boards.has(b.fqbn), b.fqbn).toBe(true);
     expect(boards.get("teensy:avr:teensy41")).toMatch(/not\s+5 V tolerant/);
     expect(guide).not.toContain("### board:");

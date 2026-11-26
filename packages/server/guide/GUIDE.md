@@ -49,7 +49,7 @@ uploads/            pictures the person attached; their message names them: Read
   Edit. Don't Read or Edit wiring.json: `wire` returns the wiring and any problems the app found.
 - One wire per entry, power and ground too. `pin` as printed on the board (Nano Every `D2`..`D13`,
   `A0`..`A7`, `TX1`, `RX1`, `5V`, `3V3`, `GND`, `VIN`; Teensy 4.1 `0`..`41`, `VIN`, `3V3`, `GND`; Pico `GP0`..`GP28`, `VBUS`, `VSYS`, `3V3`, `GND`; Feather
-  silkscreen labels `TX`, `RX`, `SCL`, `D5`, `A0`, `USB`, `3V3`, `GND`; ESP32 and ESP32-S3 `IO0`..`IO48`, `5V`, `3V3`, `GND`, `EN`/`RST`). `part` is a short name, the same for all its wires; `partPin` the pin on the part.
+  silkscreen labels `TX`, `RX`, `SCL`, `D5`, `A0`, `USB`, `3V3`, `GND`; Cheap Yellow Display `IO22`, `IO27`, `IO35`, `IO1`/`IO3`, `IO26`, `VIN`, `3V3`, `GND`). `part` is a short name, the same for all its wires; `partPin` the pin on the part.
 - Say in a few words what else a part needs (resistor, library, supply).
 - A board or display switch is handled by the app: it renames the wiring's pins and scales the screen
   to the new resolution. Don't redo that; only fix what the person asks or what a build reports.
@@ -151,23 +151,19 @@ D4 4 (on-board NeoPixel), D5 5, D6 6, D9-D13 9-13, D24/D25. Built in: LIS3DH on 
 terminal button 19, servo 20, NeoPixel strip 21. **Set `PIN_EXTERNAL_POWER` (23) HIGH** before using the terminal
 5 V, servo or amp. Power the Nextion from USB.
 
-### board: esp32:esp32:esp32
-ESP32 DevKitC (ESP32-WROOM-32, arduino-esp32 core): 2 cores at 240 MHz, Wi-Fi and Bluetooth, 1.25 MB for the
-sketch, ~320 KB RAM. **3.3 V logic, not 5 V tolerant** (level shifter or divider for 5 V outputs, in the
-wiring). Pins are `IOn` (write `n` in code). The display is on Serial1 at NexPass's pins, RX 16 / TX 17:
-keep `NexPass.begin(Serial1)`, don't call `Serial1.begin()` or set other pins. Never use GPIO6-11 (flash);
-34-39 are inputs only, without pull-ups; 0, 2, 5, 12, 15 are strapping pins (nothing that pulls them at boot);
-1/3 are the USB serial. ADC2 (0, 2, 4, 12-15, 25-27) doesn't read while Wi-Fi is on: use 32-39 for analog with
-Wi-Fi. Wire = 21 SDA / 22 SCL, SPI = 18 SCK / 19 MISO / 23 MOSI / 5 CS, DAC 25/26. analogRead is 12-bit.
-PWM: `analogWrite()` works; `ledcAttach(pin, freq, bits)` for more control (core 3.x API: no `ledcSetup`).
-Keep Wi-Fi code non-blocking (no waiting loops on `WiFi.status()` in loop()). Power the Nextion from 5V.
-
-### board: esp32:esp32:esp32s3
-ESP32-S3 DevKitC-1 (arduino-esp32 core): 2 cores at 240 MHz, Wi-Fi and Bluetooth LE, 1.25 MB for the sketch,
-~320 KB RAM (plus PSRAM on N8R2/N8R8 modules). **3.3 V logic, not 5 V tolerant** (level shifter or divider for
-5 V outputs, in the wiring). Pins are `IOn` (write `n` in code). The display is on Serial1 at NexPass's pins,
-RX 18 / TX 17: keep `NexPass.begin(Serial1)`, don't call `Serial1.begin()` or set other pins. 19/20 are the
-native USB port; 35-37 belong to the PSRAM on octal-PSRAM modules; 0, 3, 45, 46 are strapping pins; 43/44 are
-the USB serial. Analog on 1-20 (ADC2 = 11-20, not while Wi-Fi is on). Wire = 8 SDA / 9 SCL, SPI = 12 SCK /
-13 MISO / 11 MOSI / 10 CS. The RGB LED is on 48 (v1.0) or 38 (v1.1): `rgbLedWrite(RGB_BUILTIN, r, g, b)`.
-`analogWrite()` or `ledcAttach()` for PWM (core 3.x API). Power the Nextion from 5V.
+### board: esp32:esp32:esp32:PartitionScheme=huge_app
+Cheap Yellow Display (ESP32-2432S028R): ESP32-WROOM-32, 2 cores at 240 MHz, Wi-Fi and Bluetooth, 3 MB for the
+sketch, ~320 KB RAM, and a **built-in 2.8" 320x240 touch screen instead of a Nextion**. Everything above about
+Nextion, hmi.txt, NexPass, check_screen, component_info, the display tool and screen builds does not apply:
+the sketch draws the screen with **LVGL 9**. `#include "Screen.h"` (the app's, don't edit or replace it), call
+`Screen.begin()` in setup() and then build the UI with `lv_*` calls (`lv_screen_active()`, `lv_label_create`,
+`lv_button_create`, `lv_obj_add_event_cb(obj, fn, LV_EVENT_CLICKED, nullptr)`, `lv_label_set_text_fmt`),
+and call `Screen.loop()` often in loop(). Landscape 320x240; fonts `lv_font_montserrat_12/14/16/20/24/32/48`.
+Don't install or include TFT_eSPI, LovyanGFX setups, lvgl or lv_conf.h: they are provided. Update the UI from
+loop() timers (millis), never block. Always `ship` target "sketch"; never call display, check_screen or
+component_info, and never edit anything under nextion/. Debug with Serial.println at 115200.
+Free pins are on the connectors: CN1 `IO22` (SCL) / `IO27` (SDA) / 3V3 / GND (I2C there: `Wire.begin(27, 22)`, since 21 is the backlight), P3 `IO35` (input only) / `IO22`,
+P1 `IO1`/`IO3` (the USB serial, avoid), speaker P4 `IO26`. Built in: RGB LED 4 red / 16 green / 17 blue
+(LOW = on), light sensor on 34 (analogRead), BOOT button on 0, SD card on SPI 5/18/19/23. The screen and touch
+use 2, 12-15, 21, 25, 32, 33, 36, 39: never use those. **3.3 V logic, not 5 V tolerant.** ADC2 pins (IO27,
+IO26) don't read analog while Wi-Fi is on. PWM: `analogWrite()` or `ledcAttach(pin, freq, bits)` (core 3+ API).

@@ -83,7 +83,12 @@ export function ProjectPage({ id, navigate }: { id: string; navigate: (to: strin
     setTabState(t);
     history.replaceState(null, "", `${location.pathname}#${t}`);
   }, []);
-  const shown: Tab = !narrow && tab === "chat" ? "screen" : tab;
+  // A board with a built-in screen has no Nextion: its screen is drawn by the sketch, so no Screen or Device tab.
+  const boards = useBoards();
+  const builtIn = !!boards.find((b) => b.fqbn === fqbn)?.screen;
+  const tabs = builtIn ? TABS.filter((t) => t.id !== "screen" && t.id !== "device") : TABS;
+  const home: Tab = builtIn ? "code" : "screen";
+  const shown: Tab = (!narrow && tab === "chat") || !tabs.some((t) => t.id === tab || tab === "chat") ? home : tab;
 
   const toChat = useCallback(
     (text: string, how: "replace" | "append" = "replace") => {
@@ -188,7 +193,7 @@ export function ProjectPage({ id, navigate }: { id: string; navigate: (to: strin
                     Chat{project.busy ? <i className="dot live" /> : badge("chat") ? <i className="dot" /> : null}
                   </button>
                 )}
-                {TABS.map((t) => (
+                {tabs.map((t) => (
                   <button key={t.id} type="button" role="tab" aria-selected={shown === t.id} className={shown === t.id ? "checked" : ""} onClick={() => setTab(t.id)}>
                     {t.label}
                     {badge(t.id) && <i className="dot" title="Changed since you last looked" />}
@@ -315,6 +320,8 @@ function StatusStrip({ detail, project, flasher, ask, toChat, navigate, onBuilds
           <>
             <p>The sketch must be rebuilt for the new board, and builds made so far are marked as made for other hardware.</p>
             <p>The app renames the wiring's pins for the new board. Check the Wiring tab afterwards, then build again.</p>
+            {next.screen && !board?.screen && <p><b>{next.name} has its own screen, drawn by the sketch with LVGL.</b> The Nextion screen isn't used on it; ask Claude to redo the UI in the sketch.</p>}
+            {!next.screen && board?.screen && <p><b>{next.name} uses a Nextion display.</b> The sketch's LVGL screen won't run on it; ask Claude to move the UI to a Nextion screen.</p>}
             {!next.fiveVoltTolerant && <p><b>{next.name} runs at {next.volts} V and its pins are not 5 V tolerant.</b> Parts that output 5 V need a level shifter.</p>}
           </>
         ),
@@ -410,6 +417,12 @@ function StatusStrip({ detail, project, flasher, ask, toChat, navigate, onBuilds
             {boards.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
         </label>
+        {board?.screen ? (
+          <span className="chip" title="This board's screen is built in and drawn by the sketch">
+            <span className="chip-key">Display</span>
+            <span className="chip-text">Built in · {board.screen.inches}″ {board.screen.width}×{board.screen.height}</span>
+          </span>
+        ) : (
         <label className="chip" title="The display this project's screen is built for">
           <span className="chip-key">Display</span>
           <select value={displays.some((d) => d.model === meta.display.model) ? meta.display.model : ""} disabled={locked || displays.length === 0} onChange={(e) => void changeDisplay(e.target.value)}>
@@ -421,6 +434,7 @@ function StatusStrip({ detail, project, flasher, ask, toChat, navigate, onBuilds
             ))}
           </select>
         </label>
+        )}
 
         <span className="spacer" />
 
@@ -429,7 +443,7 @@ function StatusStrip({ detail, project, flasher, ask, toChat, navigate, onBuilds
             <span className={`led ${device.portLabel ? "on" : ""}`} />
             <span className="chip-text">{device.portLabel ? `${device.portLabel}${device.display ? ` · ${device.display.model}` : ""}` : "No device"}</span>
             <button className="btn quiet" type="button" onClick={() => device.choosePort()}>{device.portLabel ? "Change…" : "Choose port…"}</button>
-            {device.portLabel && !device.display && (
+            {device.portLabel && !device.display && !board?.screen && (
               <button className="btn quiet" type="button" disabled={locked} title="Ask the display which model it is, through the running sketch" onClick={() => void device.run([]).catch((e: Error) => setError(`Couldn't reach the display: ${e.message}`))}>
                 Check display
               </button>

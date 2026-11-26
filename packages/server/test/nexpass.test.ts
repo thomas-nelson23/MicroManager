@@ -9,12 +9,9 @@ import { expect, it } from "vitest";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const hasGpp = spawnSync("g++", ["--version"]).status === 0;
 
-it.skipIf(!hasGpp).each([
-  ["", []],
-  [" (ESP32)", ["-DARDUINO_ARCH_ESP32"]],
-])("NexPass request channel and passthrough behave%s", (_, defines) => {
+it.skipIf(!hasGpp)("NexPass request channel and passthrough behave", () => {
   const out = path.join(mkdtempSync(path.join(os.tmpdir(), "nexpass-")), "nexpass_test");
-  execFileSync("g++", ["-std=gnu++11", "-Wall", "-Werror", ...defines, "-I", path.join(here, "nexpass"), "-o", out, path.join(here, "nexpass", "nexpass_test.cpp")]);
+  execFileSync("g++", ["-std=gnu++11", "-Wall", "-Werror", "-I", path.join(here, "nexpass"), "-o", out, path.join(here, "nexpass", "nexpass_test.cpp")]);
   const r = spawnSync(out, { encoding: "utf8" });
   expect(r.stdout.trim()).toBe("ok");
   expect(r.status).toBe(0);

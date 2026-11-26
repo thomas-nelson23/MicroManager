@@ -11,7 +11,7 @@ import { config } from "./config.ts";
 import { applyAttrChange, type AttrChange, HmiEditError } from "./hmi-edit.ts";
 import { hubFor } from "./hub.ts";
 import { projectFonts } from "./layout-lint.ts";
-import { BOARDS, boardById } from "./boards.ts";
+import { BOARDS, boardByFqbn, boardById } from "./boards.ts";
 import { DISPLAYS, displayByModel } from "./displays.ts";
 import { addFeatureRequest, deleteFeatureRequest, listFeatureRequests, markFeatureRequestSent, parseFeatureRequest } from "./feature-requests.ts";
 import {
@@ -87,6 +87,7 @@ app.patch("/api/projects/:id", async (c) => {
   const display = typeof body.display === "string" && body.display ? displayByModel(body.display) : undefined;
   if (typeof body.board === "string" && body.board && !board) return c.json({ error: `unknown board: ${body.board}` }, 400);
   if (typeof body.display === "string" && body.display && !display) return c.json({ error: `unknown display: ${body.display}` }, 400);
+  if (display && boardByFqbn((board ?? meta.board).fqbn)?.screen) return c.json({ error: "this board's screen is built in; there is no display to choose" }, 400);
   const boardChanges = board && board.fqbn !== meta.board.fqbn;
   const displayChanges = display && display.model !== meta.display.model;
   if ((boardChanges || displayChanges) && hubFor(meta.id).busy) return c.json({ error: "Claude is working on this project; try again when it's done" }, 409);
