@@ -49,7 +49,7 @@ uploads/            pictures the person attached; their message names them: Read
   Edit. Don't Read or Edit wiring.json: `wire` returns the wiring and any problems the app found.
 - One wire per entry, power and ground too. `pin` as printed on the board (Nano Every `D2`..`D13`,
   `A0`..`A7`, `TX1`, `RX1`, `5V`, `3V3`, `GND`, `VIN`; Teensy 4.1 `0`..`41`, `VIN`, `3V3`, `GND`; Pico `GP0`..`GP28`, `VBUS`, `VSYS`, `3V3`, `GND`; Feather
-  silkscreen labels `TX`, `RX`, `SCL`, `D5`, `A0`, `USB`, `3V3`, `GND`). `part` is a short name, the same for all its wires; `partPin` the pin on the part.
+  silkscreen labels `TX`, `RX`, `SCL`, `D5`, `A0`, `USB`, `3V3`, `GND`; Cheap Yellow Display `IO22`, `IO27`, `IO35`, `IO1`/`IO3`, `IO26`, `VIN`, `3V3`, `GND`). `part` is a short name, the same for all its wires; `partPin` the pin on the part.
 - Say in a few words what else a part needs (resistor, library, supply).
 - A board or display switch is handled by the app: it renames the wiring's pins and scales the screen
   to the new resolution. Don't redo that; only fix what the person asks or what a build reports.
@@ -150,3 +150,20 @@ labels; code uses GPIO numbers: TX 0 / RX 1 (Serial1), SDA 2 / SCL 3 (Wire), SCK
 D4 4 (on-board NeoPixel), D5 5, D6 6, D9-D13 9-13, D24/D25. Built in: LIS3DH on Wire (int 22), I2S amp 16-18,
 terminal button 19, servo 20, NeoPixel strip 21. **Set `PIN_EXTERNAL_POWER` (23) HIGH** before using the terminal
 5 V, servo or amp. Power the Nextion from USB.
+
+### board: esp32:esp32:esp32:PartitionScheme=huge_app
+Cheap Yellow Display (ESP32-2432S028R): ESP32-WROOM-32, 2 cores at 240 MHz, Wi-Fi and Bluetooth, 3 MB for the
+sketch, ~320 KB RAM, and a **built-in 2.8" 320x240 touch screen instead of a Nextion**. Everything above about
+Nextion, hmi.txt, NexPass, check_screen, component_info, the display tool and screen builds does not apply:
+the sketch draws the screen with **LVGL 9**. `#include "Screen.h"` (the app's, don't edit or replace it), call
+`Screen.begin()` in setup() and then build the UI with `lv_*` calls (`lv_screen_active()`, `lv_label_create`,
+`lv_button_create`, `lv_obj_add_event_cb(obj, fn, LV_EVENT_CLICKED, nullptr)`, `lv_label_set_text_fmt`),
+and call `Screen.loop()` often in loop(). Landscape 320x240; fonts `lv_font_montserrat_12/14/16/20/24/32/48`.
+Don't install or include TFT_eSPI, LovyanGFX setups, lvgl or lv_conf.h: they are provided. Update the UI from
+loop() timers (millis), never block. Always `ship` target "sketch"; never call display, check_screen or
+component_info, and never edit anything under nextion/. Debug with Serial.println at 115200.
+Free pins are on the connectors: CN1 `IO22` (SCL) / `IO27` (SDA) / 3V3 / GND (I2C there: `Wire.begin(27, 22)`, since 21 is the backlight), P3 `IO35` (input only) / `IO22`,
+P1 `IO1`/`IO3` (the USB serial, avoid), speaker P4 `IO26`. Built in: RGB LED 4 red / 16 green / 17 blue
+(LOW = on), light sensor on 34 (analogRead), BOOT button on 0, SD card on SPI 5/18/19/23. The screen and touch
+use 2, 12-15, 21, 25, 32, 33, 36, 39: never use those. **3.3 V logic, not 5 V tolerant.** ADC2 pins (IO27,
+IO26) don't read analog while Wi-Fi is on. PWM: `analogWrite()` or `ledcAttach(pin, freq, bits)` (core 3+ API).

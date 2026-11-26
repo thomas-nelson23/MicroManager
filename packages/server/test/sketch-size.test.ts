@@ -8,6 +8,9 @@ describe("sketchSize", () => {
   it("reads the RP2040 line", () => {
     expect(sketchSize("Sketch uses 57360 bytes (2%) of program storage space. Maximum is 2093056 bytes.")).toEqual({ bytes: 57360, max: 2093056 });
   });
+  it("reads the ESP32 line", () => {
+    expect(sketchSize("Sketch uses 289873 bytes (22%) of program storage space. Maximum is 1310720 bytes.\nGlobal variables use 20936 bytes (6%) of dynamic memory")).toEqual({ bytes: 289873, max: 1310720 });
+  });
   it("reads the Teensy 4.1 line", () => {
     const out = `Memory Usage on Teensy 4.1:
   FLASH: code:11252, data:4040, headers:8268   free for files:8102904

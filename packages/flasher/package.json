@@ -3,13 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Flash Arduino, Teensy and RP2040 boards and upload Nextion TFTs (Web Serial / WebHID / File System Access in the browser, serialport in Node).",
+  "description": "Flash Arduino, Teensy, RP2040 and ESP32 boards and upload Nextion TFTs (Web Serial / WebHID / File System Access in the browser, serialport in Node).",
   "exports": {
     ".": "./src/index.ts",
     "./node": "./src/node-transport.ts",
     "./web": "./src/web-transport.ts",
     "./web-hid": "./src/web-hid.ts",
-    "./web-uf2": "./src/web-uf2.ts"
+    "./web-uf2": "./src/web-uf2.ts",
+    "./web-esp32": "./src/web-esp32.ts"
   },
   "scripts": {
     "test": "vitest run",
@@ -23,5 +24,8 @@
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.1.0"
+  },
+  "dependencies": {
+    "esptool-js": "^0.7.1"
   }
 }

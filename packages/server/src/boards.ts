@@ -22,8 +22,8 @@ export interface Board {
   id: string;
   fqbn: string;
   name: string;
-  /** How the browser flashes it: UPDI over Web Serial, Teensy HalfKay over WebHID, or a UF2 file on the RP2040's BOOTSEL drive. */
-  flasher: "nano-every" | "teensy" | "rp2040";
+  /** How the browser flashes it: UPDI over Web Serial, Teensy HalfKay over WebHID, a UF2 file on the RP2040's BOOTSEL drive, or the ESP32's ROM bootloader over Web Serial (esptool). */
+  flasher: "nano-every" | "teensy" | "rp2040" | "esp32";
   /** Logic level of the I/O pins, in volts. */
   volts: number;
   /** True when a pin survives a 5 V signal. */
@@ -33,7 +33,15 @@ export interface Board {
   usb: { vendorId: number; productId?: number }[];
   /** Pins in physical order, top to bottom on each side. */
   pins: BoardPin[];
+  /**
+   * A screen built into the board, drawn by the sketch (LVGL through the app's Screen.h) instead of a
+   * Nextion. `lgfx` is the LovyanGFX board define that sets up its panel and touch.
+   */
+  screen?: { model: string; width: number; height: number; inches: number; lgfx: string };
 }
+
+/** The project display of a board with a built-in screen. */
+export const builtInDisplay = (s: NonNullable<Board["screen"]>) => ({ series: "Built-in" as const, model: s.model, width: s.width, height: s.height, inches: s.inches });
 
 const io = (name: string, side: "L" | "R", caps: PinCap[], extra: Partial<BoardPin> = {}): BoardPin => ({ name, side, kind: "io", caps: ["digital", "interrupt", ...caps], ...extra });
 const fixed = (name: string, side: "L" | "R", kind: BoardPin["kind"], aliases?: string[]): BoardPin => ({ name, side, kind, caps: [], ...(aliases ? { aliases } : {}) });
@@ -184,6 +192,40 @@ const PROP_MAKER_PINS: BoardPin[] = [
   fp("SDA", 2, "R", ["i2c"], "SDA"),
 ];
 
+// Cheap Yellow Display (Sunton ESP32-2432S028R): an ESP32-WROOM-32 with a 2.8" 320x240 touch screen built
+// in. The screen (IO2, 12-15, backlight 21) and touch (IO25, 32, 33, 36, 39) take most pins; what is left is
+// on the connectors. Names are the silkscreen's IOn (written `n` in code). USB at the top: the P3 and CN1
+// connectors on the left, P1 (serial), the speaker and the built-in parts on the right.
+const cyd = (n: number, side: "L" | "R", caps: PinCap[], role?: string, more: string[] = []) =>
+  io(`IO${n}`, side, caps, { aliases: [String(n), `GPIO${n}`, `D${n}`, ...more], ...(role ? { role } : {}) });
+const builtIn = (n: number, side: "L" | "R", role: string): BoardPin => ({ name: `IO${n}`, side, kind: "other", caps: [], aliases: [String(n), `GPIO${n}`], role });
+const CYD_PINS: BoardPin[] = [
+  gnd("L"),
+  { ...cyd(35, "L", ["analog"], "P3, input only"), caps: ["digital", "analog"] },
+  cyd(22, "L", ["pwm", "i2c"], "P3 / CN1, SCL"),
+  builtIn(21, "L", "P3, backlight"),
+  gnd("L"),
+  cyd(27, "L", ["pwm", "analog", "i2c"], "CN1, SDA"),
+  fixed("3V3", "L", "power", ["3.3V"]),
+  fixed("VIN", "R", "power", ["5V", "VBUS"]),
+  cyd(1, "R", ["serial"], "P1 TX (USB serial)", ["TX", "TX0"]),
+  cyd(3, "R", ["serial"], "P1 RX (USB serial)", ["RX", "RX0"]),
+  gnd("R"),
+  cyd(26, "R", ["pwm"], "P4 speaker amp", ["SPK", "DAC2"]),
+  cyd(0, "R", [], "BOOT button", ["BOOT"]),
+  builtIn(4, "R", "RGB LED red (LOW = on)"),
+  builtIn(16, "R", "RGB LED green (LOW = on)"),
+  builtIn(17, "R", "RGB LED blue (LOW = on)"),
+  builtIn(34, "R", "light sensor (LDR)"),
+  builtIn(5, "R", "SD card CS"),
+  builtIn(18, "R", "SD card SCK"),
+  builtIn(19, "R", "SD card MISO"),
+  builtIn(23, "R", "SD card MOSI"),
+];
+
+/** USB-serial chips ESP32 boards use: WCH CH340/CH9102, Silicon Labs CP210x. */
+const ESP32_USB = [{ vendorId: 0x1a86 }, { vendorId: 0x10c4, productId: 0xea60 }];
+
 export const BOARDS: Board[] = [
   {
     id: "nano-every",
@@ -229,15 +271,32 @@ export const BOARDS: Board[] = [
     usb: [{ vendorId: 0x239a, productId: 0x8131 }, { vendorId: 0x239a, productId: 0xc131 }],
     pins: PROP_MAKER_PINS,
   },
+  {
+    id: "cyd-2432s028r",
+    // huge_app: 3 MB for the sketch (LVGL and its fonts are big), no OTA
+    fqbn: "esp32:esp32:esp32:PartitionScheme=huge_app",
+    name: "Cheap Yellow Display (ESP32-2432S028R)",
+    flasher: "esp32",
+    volts: 3.3,
+    fiveVoltTolerant: false,
+    flashKb: 3072,
+    usb: ESP32_USB,
+    pins: CYD_PINS,
+    screen: { model: "ESP32-2432S028R", width: 320, height: 240, inches: 2.8, lgfx: "LGFX_ESP32_2432S028" },
+  },
 ];
 
 export const boardById = (id: string) => BOARDS.find((b) => b.id === id);
 export const boardByFqbn = (fqbn: string) => BOARDS.find((b) => b.fqbn === fqbn);
 
-/** The board a USB serial port belongs to, if it is one we know. */
-export function boardByUsb(vendorId?: number, productId?: number): Board | undefined {
+/**
+ * The board a USB serial port belongs to, if it is one we know. Several boards can share a USB id (ESP32
+ * boards use common USB-serial chips): `prefer`, usually the project's board, wins when it fits.
+ */
+export function boardByUsb(vendorId?: number, productId?: number, prefer?: Board): Board | undefined {
   if (vendorId === undefined) return undefined;
-  return BOARDS.find((b) => b.usb.some((u) => u.vendorId === vendorId && (u.productId === undefined || u.productId === productId)));
+  const fits = (b: Board) => b.usb.some((u) => u.vendorId === vendorId && (u.productId === undefined || u.productId === productId));
+  return prefer && fits(prefer) ? prefer : BOARDS.find(fits);
 }
 
 /** "1 (TX1)" -> "1", " d4 " -> "D4". */

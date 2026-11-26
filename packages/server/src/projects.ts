@@ -1,7 +1,7 @@
 /** Projects as plain folders: project.json, sketch/, nextion/, hardware.md, builds/<n>/. */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { type Board, boardById, boardByFqbn } from "./boards.ts";
+import { type Board, boardById, boardByFqbn, builtInDisplay } from "./boards.ts";
 import { config, projectsDir } from "./config.ts";
 import { type DisplayModel, displayByModel } from "./displays.ts";
 import { retargetHmi } from "./hmi-compact.ts";
@@ -93,9 +93,30 @@ export async function listProjects(): Promise<ProjectMeta[]> {
   return out.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
-const toMetaDisplay = (d: DisplayModel) => ({ series: d.series, model: d.model, width: d.width, height: d.height });
+const toMetaDisplay = (d: Pick<DisplayModel, "model" | "width" | "height"> & { series: string }) => ({ series: d.series, model: d.model, width: d.width, height: d.height });
 
 const boardFile = (b: Board, file: string) => path.join(config.serverRoot, "boards", b.id, file);
+
+/** The app's Screen.h for a board with a built-in screen: the template with the board's LovyanGFX define. */
+export async function screenHeader(board: Board): Promise<string> {
+  const tpl = await fs.readFile(path.join(config.serverRoot, "screen", "Screen.h"), "utf8");
+  return tpl.replace(/^#define LGFX_\w+( +\/\/ board: set by the app)$/m, `#define ${board.screen!.lgfx}$1`);
+}
+
+/**
+ * Give the sketch folder the app's library for the board: Screen.h for a built-in screen, NexPass.h for a
+ * Nextion. The other one goes, so Claude never sees a library that doesn't apply.
+ */
+export async function refreshBoardLibrary(dir: string, board: Board | undefined): Promise<void> {
+  const sketch = path.join(dir, "sketch");
+  if (board?.screen) {
+    await fs.writeFile(path.join(sketch, "Screen.h"), await screenHeader(board));
+    await fs.rm(path.join(sketch, "NexPass.h"), { force: true });
+  } else {
+    await fs.copyFile(path.join(config.serverRoot, "template", "sketch", "NexPass.h"), path.join(sketch, "NexPass.h"));
+    await fs.rm(path.join(sketch, "Screen.h"), { force: true });
+  }
+}
 
 export async function createProject(title: string, description = "", boardId?: string, displayModel?: string): Promise<ProjectMeta> {
   const board = (boardId && boardById(boardId)) || boardByFqbn(config.defaults.board.fqbn);
@@ -105,6 +126,12 @@ export async function createProject(title: string, description = "", boardId?: s
   const dir = projectDir(id);
   await fs.cp(path.join(config.serverRoot, "template"), dir, { recursive: true });
   await fs.mkdir(path.join(dir, "builds"), { recursive: true });
+  if (board?.screen) {
+    // Built-in screen: the sketch draws it (LVGL), so no Nextion files.
+    await fs.rm(path.join(dir, "nextion"), { recursive: true, force: true });
+    await fs.copyFile(path.join(config.serverRoot, "screen", "sketch.ino"), path.join(dir, "sketch", "sketch.ino"));
+    await refreshBoardLibrary(dir, board);
+  }
   if (board) await fs.copyFile(boardFile(board, "hardware.md"), path.join(dir, "hardware.md"));
   else await fs.writeFile(path.join(dir, "hardware.md"), "# Hardware\n\nDisplay: Nextion on Serial1 at 9600 baud.\n");
   if (board) await fs.copyFile(boardFile(board, "wiring.json"), path.join(dir, "wiring.json"));
@@ -115,7 +142,7 @@ export async function createProject(title: string, description = "", boardId?: s
     title: title.trim() || "New project",
     description,
     board: board ? { fqbn: board.fqbn, name: board.name } : { ...config.defaults.board },
-    display: display ? toMetaDisplay(display) : { ...config.defaults.display },
+    display: board?.screen ? toMetaDisplay(builtInDisplay(board.screen)) : display ? toMetaDisplay(display) : { ...config.defaults.display },
     createdAt: now,
     updatedAt: now,
   };
@@ -149,10 +176,20 @@ export async function setBoard(meta: ProjectMeta, board: Board): Promise<void> {
     const { wiring, error } = parseWiring(curW);
     if (!error) await fs.writeFile(wj, formatWiring(remapWiring(wiring, old, board)));
   }
-  await fs.copyFile(path.join(config.serverRoot, "template", "sketch", "NexPass.h"), path.join(dir, "sketch", "NexPass.h"));
+  await refreshBoardLibrary(dir, board);
+  // The display follows the board: its built-in screen, or a Nextion again when leaving one.
+  if (board.screen) meta.display = toMetaDisplay(builtInDisplay(board.screen));
+  else if (old?.screen) {
+    meta.display = { ...config.defaults.display };
+    const nx = path.join(dir, "nextion");
+    if (!(await fs.stat(nx).then(() => true, () => false))) await fs.cp(path.join(config.serverRoot, "template", "nextion"), nx, { recursive: true });
+  }
   meta.board = { fqbn: board.fqbn, name: board.name };
   await writeMeta(meta);
 }
+
+/** True when the project's board has its own screen (no Nextion: no screen builds, uploads or display commands). */
+export const hasBuiltInScreen = (meta: ProjectMeta) => !!boardByFqbn(meta.board.fqbn)?.screen;
 
 /**
  * Switch a project to another display. The screen is carried over here, not by Claude: positions and

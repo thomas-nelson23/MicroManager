@@ -93,6 +93,10 @@ export function remapWiring(w: Wiring, from: Board, to: Board): Wiring {
       const names = old ? [old.name, ...(old.aliases ?? [])] : [c.pin];
       // a 5 V supply pin stays a 5 V supply pin, whatever it is called
       if (old?.kind === "power" && names.some((n) => /^5V$/i.test(n))) names.unshift("5V");
+      // a serial port's pin stays on that port (pin numbers differ: D1 is Serial1 TX on a Nano, USB TX on an ESP32)
+      const port = /^Serial\d (TX|RX)/.exec(old?.role ?? "")?.[0];
+      const same = port ? to.pins.find((p) => p.role?.startsWith(port)) : undefined;
+      if (same) return { ...c, pin: same.name };
       for (const n of names) {
         const hit = to.pins[findPins(to, n)[0] ?? -1];
         if (hit && (!old || hit.kind === old.kind)) return { ...c, pin: hit.name };

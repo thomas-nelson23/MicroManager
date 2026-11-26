@@ -2,14 +2,17 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { boardByFqbn } from "./boards.ts";
 import { config } from "./config.ts";
 import {
   type BuildPart,
   type BuildRecord,
+  hasBuiltInScreen,
   listBuilds,
   nextBuildNumber,
   projectDir,
   readMeta,
+  screenHeader,
   writeBuild,
 } from "./projects.ts";
 
@@ -39,11 +42,17 @@ function run(cmd: string, args: string[], opts: { cwd?: string; env?: NodeJS.Pro
 const tail = (s: string, n = 2500) => (s.length > n ? "…" + s.slice(-n) : s).trim();
 
 /**
- * NexPass.h is the app's library, not the project's code: every sketch build uses the current copy, so
- * older projects pick up fixes and new features (like the request channel) when they are rebuilt.
+ * NexPass.h (or Screen.h for a built-in screen) is the app's library, not the project's code: every sketch
+ * build uses the current copy, so older projects pick up fixes and new features when they are rebuilt.
  */
-async function refreshNexPass(id: string): Promise<void> {
-  const dest = path.join(projectDir(id), "sketch", "NexPass.h");
+async function refreshAppLibrary(id: string, fqbn: string): Promise<void> {
+  const board = boardByFqbn(fqbn);
+  const sketch = path.join(projectDir(id), "sketch");
+  if (board?.screen) {
+    await fs.writeFile(path.join(sketch, "Screen.h"), await screenHeader(board));
+    return;
+  }
+  const dest = path.join(sketch, "NexPass.h");
   const [cur, latest] = await Promise.all([
     fs.readFile(dest, "utf8").catch(() => null),
     fs.readFile(path.join(config.serverRoot, "template", "sketch", "NexPass.h"), "utf8"),
@@ -53,12 +62,14 @@ async function refreshNexPass(id: string): Promise<void> {
 
 export async function buildSketch(id: string, outDir: string): Promise<BuildPart> {
   const meta = await readMeta(id);
-  await refreshNexPass(id);
+  await refreshAppLibrary(id, meta.board.fqbn);
   const t0 = Date.now();
+  const bundled = await fs.stat(config.bundledLibraries).then(() => ["--libraries", config.bundledLibraries], () => []);
   const r = await run(config.arduinoCli, [
     "compile",
     "--fqbn",
     meta.board.fqbn,
+    ...bundled,
     "--output-dir",
     path.join(outDir, "arduino"),
     path.join(projectDir(id), "sketch"),
@@ -66,9 +77,11 @@ export async function buildSketch(id: string, outDir: string): Promise<BuildPart
   const seconds = Math.round((Date.now() - t0) / 100) / 10;
   if (r.code !== 0) return { ok: false, seconds, error: tail(r.out) };
   const size = sketchSize(r.out);
-  // AVR and Teensy builds flash a .hex; RP2040 builds a .uf2 for its BOOTSEL drive.
-  const ext = (await fs.stat(path.join(outDir, "arduino", "sketch.ino.uf2")).then(() => true, () => false)) ? "uf2" : "hex";
-  await fs.copyFile(path.join(outDir, "arduino", `sketch.ino.${ext}`), path.join(outDir, `sketch.${ext}`));
+  // AVR and Teensy builds flash a .hex; RP2040 builds a .uf2 for its BOOTSEL drive; ESP32 builds the
+  // merged image (bootloader, partition table, boot_app0 and the app in one .bin, written at 0x0).
+  const has = (f: string) => fs.stat(path.join(outDir, "arduino", f)).then(() => true, () => false);
+  const [src, ext] = (await has("sketch.ino.merged.bin")) ? ["sketch.ino.merged.bin", "bin"] : (await has("sketch.ino.uf2")) ? ["sketch.ino.uf2", "uf2"] : ["sketch.ino.hex", "hex"];
+  await fs.copyFile(path.join(outDir, "arduino", src), path.join(outDir, `sketch.${ext}`));
   await fs.rm(path.join(outDir, "arduino"), { recursive: true, force: true });
   return { ok: true, file: `sketch.${ext}`, seconds, ...size };
 }
@@ -128,10 +141,13 @@ export async function buildScreen(id: string, outDir: string): Promise<BuildPart
 
 /** Build one or both halves into a new numbered build folder. */
 export async function build(id: string, target: "sketch" | "screen" | "both", label: string): Promise<BuildRecord> {
+  const meta = await readMeta(id);
+  const builtIn = hasBuiltInScreen(meta);
+  // A built-in screen is part of the sketch: there is no screen half to build or carry over.
+  if (builtIn) target = "sketch";
   const n = await nextBuildNumber(id);
   const outDir = path.join(projectDir(id), "builds", String(n));
   await fs.mkdir(outDir, { recursive: true });
-  const meta = await readMeta(id);
   const rec: BuildRecord = { n, label: label.slice(0, 80) || `Build ${n}`, createdAt: new Date().toISOString(), board: meta.board.fqbn, display: meta.display.model };
   const [sketch, screen] = await Promise.all([
     target !== "screen" ? buildSketch(id, outDir) : undefined,
@@ -141,7 +157,7 @@ export async function build(id: string, target: "sketch" | "screen" | "both", la
   if (screen) rec.screen = screen;
   // carry the other half forward so every build is flashable as a whole
   const prev = (await listBuilds(id)).find((b) => b.n < n);
-  for (const half of ["sketch", "screen"] as const) {
+  for (const half of builtIn ? (["sketch"] as const) : (["sketch", "screen"] as const)) {
     const p = prev?.[half];
     if (!rec[half] && p?.ok && p.file) {
       await fs.copyFile(path.join(projectDir(id), "builds", String(prev!.n), p.file), path.join(outDir, p.file));

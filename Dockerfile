@@ -26,18 +26,44 @@ RUN apt-get update \
 # The Teensy core (teensy:avr, for the Teensy 4.1) comes from PJRC's board manager index, the RP2040
 # core (rp2040:rp2040, for the Raspberry Pi Pico) from arduino-pico's. Its RISC-V compiler (RP2350
 # only) and OpenOCD (debug probes) are dropped: RP2040 builds don't use them, and they are ~700 MB.
+# The ESP32 core (esp32:esp32) comes from Espressif's index. Only plain-ESP32 boards are offered,
+# so the RISC-V compiler (C3/C6/H2/P4), the debuggers and the other chips' prebuilt libraries are dropped.
 ENV ARDUINO_DIRECTORIES_DATA=/opt/arduino \
     ARDUINO_DIRECTORIES_DOWNLOADS=/opt/arduino/staging \
     ARDUINO_DIRECTORIES_USER=/data/arduino \
-    ARDUINO_BOARD_MANAGER_ADDITIONAL_URLS="https://www.pjrc.com/teensy/package_teensy_index.json https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json"
+    ARDUINO_BOARD_MANAGER_ADDITIONAL_URLS="https://www.pjrc.com/teensy/package_teensy_index.json https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json https://espressif.github.io/arduino-esp32/package_esp32_index.json"
 RUN arduino-cli core update-index \
  && arduino-cli core install arduino:megaavr arduino:avr teensy:avr rp2040:rp2040 \
  && rm -rf /opt/arduino/staging /opt/arduino/packages/rp2040/tools/pqt-gcc-riscv /opt/arduino/packages/rp2040/tools/pqt-openocd
+RUN arduino-cli core install esp32:esp32 \
+ && cd /opt/arduino/packages/esp32/tools \
+ && rm -rf esp-rv32 riscv32-esp-elf-gcc riscv32-esp-elf-gdb xtensa-esp-elf-gdb openocd-esp32 \
+ && for d in *-libs; do case "$d" in esp32-libs) ;; *) rm -rf "$d" ;; esac; done \
+ && rm -rf /opt/arduino/staging \
+ && ls /opt/arduino/packages/esp32/tools && du -sh /opt/arduino/packages/esp32
+# Libraries for boards with a built-in screen (the app's Screen.h): LVGL and LovyanGFX, pinned, outside
+# /data so the image owns them. lv_conf.h sits next to the lvgl folder, where LVGL looks for it.
+# LovyanGFX comes from a pinned develop commit: release 1.3.0 doesn't build on ESP32 core 4.x (IDF 6 renamed
+# the DAC functions its composite-video panel uses). Switch back to a release once one has the fix.
+ARG LOVYANGFX_COMMIT=973059c9b61ad250aadc270616193698cb4a463c
+RUN arduino-cli lib update-index \
+ && ARDUINO_DIRECTORIES_USER=/opt/arduino-bundled arduino-cli lib install lvgl@9.6.0 \
+ && curl -fsSL "https://github.com/lovyan03/LovyanGFX/archive/${LOVYANGFX_COMMIT}.tar.gz" | tar -xz -C /opt/arduino-bundled/libraries \
+ && mv "/opt/arduino-bundled/libraries/LovyanGFX-${LOVYANGFX_COMMIT}" /opt/arduino-bundled/libraries/LovyanGFX \
+ && rm -rf /opt/arduino/staging
+COPY packages/server/screen/lv_conf.h /opt/arduino-bundled/libraries/lv_conf.h
 
 WORKDIR /app
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./
 COPY --from=build /app/packages ./packages
+# Smoke test: the pruned ESP32 core and the bundled libraries build the Cheap Yellow Display's starter sketch.
+RUN mkdir -p /tmp/smoke/sketch \
+ && cp packages/server/screen/sketch.ino packages/server/screen/Screen.h /tmp/smoke/sketch/ \
+ && ARDUINO_DIRECTORIES_USER=/tmp/arduino-user arduino-cli compile --fqbn esp32:esp32:esp32:PartitionScheme=huge_app \
+      --libraries /opt/arduino-bundled/libraries --output-dir /tmp/esp-build /tmp/smoke/sketch \
+ && test -s /tmp/esp-build/sketch.ino.merged.bin \
+ && rm -rf /tmp/smoke /tmp/esp-build /tmp/arduino* /root/.cache
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh /app/packages/server/nextion/nxbuild.sh
 
